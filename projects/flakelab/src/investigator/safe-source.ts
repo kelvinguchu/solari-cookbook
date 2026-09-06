@@ -3,6 +3,7 @@ import { dirname, extname, relative, resolve } from "node:path"
 
 const MAX_SOURCE_BYTES = 64 * 1_024
 const MAX_CONTEXT_FILES = 8
+const MAX_APPROVED_SOURCE_FILES = MAX_CONTEXT_FILES - 1
 const ALLOWED_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx"])
 const SECRET_ASSIGNMENT = /(?:api[_-]?key|authorization|password|secret|token)\s*[:=]\s*["'][^"']{8,}/iu
 const LOCAL_IMPORT = /\bfrom\s+["'](\.[^"']+)["']/gu
@@ -63,12 +64,11 @@ function localImports(content: string): string[] {
   return [...content.matchAll(LOCAL_IMPORT)].map((match) => match[1])
 }
 
-export async function readSafeTestContext(
+async function readSafeContext(
   projectRoot: string,
-  selector: string,
+  selectors: string[],
 ): Promise<SafeSource[]> {
-  const rootPath = resolveSafeSource(projectRoot, selector)
-  const queue = [rootPath]
+  const queue = selectors.map((selector) => resolveSafeSource(projectRoot, selector))
   const visited = new Set<string>()
   const context: SafeSource[] = []
   while (queue.length > 0 && context.length < MAX_CONTEXT_FILES) {
@@ -91,4 +91,21 @@ export async function readSafeTestContext(
     throw new Error("Local test context exceeds the 64 KiB model boundary")
   }
   return context
+}
+
+export function readSafeTestContext(projectRoot: string, selector: string): Promise<SafeSource[]> {
+  return readSafeContext(projectRoot, [selector])
+}
+
+export function readSafeRepairContext(
+  projectRoot: string,
+  selectedTest: string,
+  approvedSourcePaths: string[],
+): Promise<SafeSource[]> {
+  if (approvedSourcePaths.length > MAX_APPROVED_SOURCE_FILES) {
+    throw new Error(
+      `Repair accepts at most ${MAX_APPROVED_SOURCE_FILES} explicitly approved source files`,
+    )
+  }
+  return readSafeContext(projectRoot, [selectedTest, ...approvedSourcePaths])
 }

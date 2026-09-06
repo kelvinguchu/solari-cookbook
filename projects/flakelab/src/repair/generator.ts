@@ -2,18 +2,42 @@ import type { LanguageModel } from "ai"
 import { generateText, Output } from "ai"
 
 import type { SafeSource } from "../investigator/safe-source.js"
-import { readSafeTestContext } from "../investigator/safe-source.js"
+import { readSafeRepairContext } from "../investigator/safe-source.js"
 import type { InvestigationReport } from "../investigator/schema.js"
+import {
+  QWEN_INPUT_USD_PER_MILLION,
+  QWEN_OUTPUT_USD_PER_MILLION,
+} from "../investigator/groq.js"
 import { validateCandidatePatch } from "./policy.js"
 import type { CandidatePatch } from "./schema.js"
 import { candidatePatchSchema } from "./schema.js"
 
 interface PatchGeneratorOptions {
   investigation: InvestigationReport
+  maxCostUsd: number
   maxSeconds: number
   model: LanguageModel
   projectRoot: string
   signal?: AbortSignal
+  sourcePaths: string[]
+}
+
+export interface CandidateGenerationUsage {
+  estimatedCostUsd: number
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface GeneratedCandidatePatch {
+  candidate: CandidatePatch
+  usage: CandidateGenerationUsage
+}
+
+function estimatedCost(inputTokens: number, outputTokens: number): number {
+  return (
+    inputTokens * QWEN_INPUT_USD_PER_MILLION
+    + outputTokens * QWEN_OUTPUT_USD_PER_MILLION
+  ) / 1_000_000
 }
 
 function patchPrompt(investigation: InvestigationReport, sources: SafeSource[]): string {
@@ -35,7 +59,7 @@ function patchPrompt(investigation: InvestigationReport, sources: SafeSource[]):
 async function requestCandidate(
   options: PatchGeneratorOptions,
   prompt: string,
-): Promise<CandidatePatch> {
+): Promise<GeneratedCandidatePatch> {
   let currentPrompt = prompt
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
@@ -49,7 +73,17 @@ async function requestCandidate(
         abortSignal: options.signal,
         temperature: 0.2,
       })
-      return result.output
+      return {
+        candidate: result.output,
+        usage: {
+          estimatedCostUsd: estimatedCost(
+            result.usage.inputTokens ?? 0,
+            result.usage.outputTokens ?? 0,
+          ),
+          inputTokens: result.usage.inputTokens ?? 0,
+          outputTokens: result.usage.outputTokens ?? 0,
+        },
+      }
     } catch (error) {
       if (attempt === 2) {
         throw error
@@ -66,19 +100,37 @@ async function requestCandidate(
 
 export async function generateCandidatePatch(
   options: PatchGeneratorOptions,
-): Promise<CandidatePatch> {
-  const sources = await readSafeTestContext(options.projectRoot, options.investigation.test)
+): Promise<GeneratedCandidatePatch> {
+  const sources = await readSafeRepairContext(
+    options.projectRoot,
+    options.investigation.test,
+    options.sourcePaths,
+  )
   const allowedPaths = sources.map((source) => source.path)
   let prompt = patchPrompt(options.investigation, sources)
+  const usage: CandidateGenerationUsage = {
+    estimatedCostUsd: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  }
   for (let attempt = 1; attempt <= 2; attempt += 1) {
-    const candidate = await requestCandidate(options, prompt)
+    const generated = await requestCandidate(options, prompt)
+    usage.inputTokens += generated.usage.inputTokens
+    usage.outputTokens += generated.usage.outputTokens
+    usage.estimatedCostUsd = estimatedCost(usage.inputTokens, usage.outputTokens)
+    if (usage.estimatedCostUsd > options.maxCostUsd) {
+      throw new Error(
+        `Repair generation cost $${usage.estimatedCostUsd.toFixed(4)} exceeded its configured budget`,
+      )
+    }
     try {
-      return await validateCandidatePatch(
+      const candidate = await validateCandidatePatch(
         options.projectRoot,
         options.investigation.test,
         allowedPaths,
-        candidate,
+        generated.candidate,
       )
+      return { candidate, usage }
     } catch (error) {
       if (attempt === 2) {
         throw error
@@ -88,7 +140,7 @@ export async function generateCandidatePatch(
         prompt,
         "The previous candidate was rejected before execution.",
         `Policy reason: ${reason}`,
-        `Rejected candidate: ${JSON.stringify(candidate)}`,
+        `Rejected candidate: ${JSON.stringify(generated.candidate)}`,
         "Produce a structural application fix that satisfies the original constraints.",
       ].join("\n")
     }

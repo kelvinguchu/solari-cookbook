@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { faultSetSchema } from "../domain/schema.js"
+
 export const failureOwnershipSchema = z.enum([
   "PRODUCT_RACE",
   "TEST_SELECTOR",
@@ -20,22 +22,34 @@ const resultSchema = z.object({
   trials: z.number().int().nonnegative(),
 })
 
+const representativeRunSchema = z.object({
+  artifacts: z.array(z.object({
+    contentType: z.string().min(1),
+    name: z.string().min(1),
+    path: z.string().min(1).max(500),
+  })).max(5),
+  durationMs: z.number().int().nonnegative(),
+  status: z.enum(["failed", "passed"]),
+  trialId: z.string().min(1),
+})
+
 export const evidenceReportSchema = z.object({
-  version: z.literal(1),
   generatedAt: z.iso.datetime(),
   status: z.enum(["FIX_PROVEN", "PATCH_REJECTED"]),
   test: z.string().min(1).max(500),
   model: z.string().min(1).max(200),
   conclusion: z.string().min(1).max(2_000),
+  causalClaim: z.object({
+    controlExperimentIds: z.array(z.string().min(1)).min(1),
+    interventionExperimentIds: z.array(z.string().min(1)).min(1),
+  }),
   ownership: z.object({
     classification: failureOwnershipSchema,
     confidence: z.enum(["high", "medium", "low"]),
     rationale: z.string().min(1).max(1_000),
   }),
   trigger: z.object({
-    kind: z.literal("network-delay"),
-    pattern: z.string().min(1).max(500),
-    delayMs: z.number().int().positive(),
+    faults: faultSetSchema,
     minimumFailureRate: z.number().gt(0).max(1),
     signature: z.string().min(1).max(200).optional(),
   }),
@@ -50,8 +64,15 @@ export const evidenceReportSchema = z.object({
     id: z.string().min(1),
     hypothesisId: z.string().min(1),
     condition: z.string().min(1).max(500),
+    representativeRuns: z.array(representativeRunSchema).max(2),
     result: resultSchema,
   })),
+  replayCommand: z.string().min(1).max(1_000),
+  sourcePaths: z.array(z.string().min(1).max(500)).min(1).max(8),
+  sourceLocations: z.array(z.object({
+    line: z.number().int().positive(),
+    path: z.string().min(1).max(500),
+  })).min(1).max(3),
   proof: z.object({
     accepted: z.boolean(),
     execution: z.literal("solari-microvm"),
@@ -70,7 +91,7 @@ export const evidenceReportSchema = z.object({
     label: z.string().min(1).max(100),
     path: z.string().min(1).max(500),
   })).min(3),
-})
+}).strict()
 
 export type EvidenceReport = z.infer<typeof evidenceReportSchema>
 export type FailureOwnership = z.infer<typeof failureOwnershipSchema>

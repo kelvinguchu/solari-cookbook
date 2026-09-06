@@ -1,114 +1,131 @@
-import { parseArgs } from "node:util"
-
+import { parseCliArguments, type CliInvocation } from "./cli-arguments.js"
 import { helpText, VERSION } from "./cli-help.js"
-import { bisect } from "./commands/bisect.js"
-import { diagnose } from "./commands/diagnose.js"
-import { discover } from "./commands/discover.js"
-import { investigate } from "./commands/investigate.js"
-import type { CliValues } from "./commands/options.js"
-import { prove } from "./commands/prove.js"
-import { repair } from "./commands/repair.js"
-import { replay } from "./commands/replay.js"
-import { generateReport } from "./commands/report.js"
-import { scan } from "./commands/scan.js"
+import { writeStderr, writeStdout } from "./ui/console.js"
+import { TerminalDocument } from "./ui/document.js"
+import { stderrTheme, stdoutTheme } from "./ui/theme.js"
 
-const ADVANCED_COMMANDS = new Set([
+type ExecutableInvocation = Exclude<CliInvocation, { command: "help" | "version" }>
+type NonScanInvocation = Exclude<
+  ExecutableInvocation,
+  { command: "analyze" | "resume" | "scan" }
+>
+
+const PROVIDER_COMMANDS = new Set<ExecutableInvocation["command"]>([
   "bisect",
-  "diagnose",
-  "discover",
   "investigate",
+  "prove",
   "repair",
-  "replay",
   "report",
-  "scan",
 ])
 
-async function runAdvanced(command: string, target: string | undefined, values: CliValues): Promise<void> {
-  if (command === "bisect") {
-    await bisect(values)
+async function runNonScanCommand(invocation: NonScanInvocation): Promise<void> {
+  switch (invocation.command) {
+    case "bisect": {
+      const { bisect } = await import("./commands/bisect.js")
+      await bisect(invocation.options)
+      return
+    }
+    case "diagnose": {
+      const { diagnose } = await import("./commands/diagnose.js")
+      await diagnose(invocation.target, invocation.options)
+      return
+    }
+    case "discover": {
+      const { discover } = await import("./commands/discover.js")
+      await discover(invocation.target, invocation.options)
+      return
+    }
+    case "doctor": {
+      const { doctor } = await import("./commands/doctor.js")
+      await doctor()
+      return
+    }
+    case "investigate": {
+      const { investigate } = await import("./commands/investigate.js")
+      await investigate(invocation.target, invocation.options)
+      return
+    }
+    case "prove": {
+      const { prove } = await import("./commands/prove.js")
+      await prove(invocation.target, invocation.options)
+      return
+    }
+    case "repair": {
+      const { repair } = await import("./commands/repair.js")
+      await repair(invocation.target, invocation.options)
+      return
+    }
+    case "replay": {
+      const { replay } = await import("./commands/replay.js")
+      await replay(invocation.target, invocation.options)
+      return
+    }
+    case "report": {
+      const { generateReport } = await import("./commands/report.js")
+      await generateReport(invocation.target, invocation.options)
+      return
+    }
+  }
+}
+
+async function runCommand(invocation: ExecutableInvocation): Promise<void> {
+  if (invocation.command === "analyze") {
+    const { analyze } = await import("./commands/analyze.js")
+    await analyze(invocation.target, invocation.options)
     return
   }
-  const selectedTarget = target ?? (command === "scan" ? "." : undefined)
-  if (!selectedTarget) {
-    throw new Error(`${command} requires a target. Run flakelab --help for examples.`)
+  if (invocation.command === "scan") {
+    const { scan } = await import("./commands/scan.js")
+    await scan(invocation.target, invocation.options)
+    return
   }
-  const commands: Record<string, (value: string, options: CliValues) => Promise<void>> = {
-    diagnose,
-    discover,
-    investigate,
-    repair,
-    replay,
-    report: generateReport,
-    scan: async (value, options) => {
-      await scan(value, options)
-    },
+  if (invocation.command === "resume") {
+    const { resumeDiagnosis } = await import("./commands/diagnose.js")
+    await resumeDiagnosis(invocation.target)
+    return
   }
-  await commands[command](selectedTarget, values)
+  await runNonScanCommand(invocation)
+}
+
+async function providerErrorMessage(error: Error): Promise<string> {
+  try {
+    const { cliErrorMessage } = await import("./providers/errors.js")
+    return cliErrorMessage(error)
+  } catch {
+    return error.message
+  }
+}
+
+/**
+ * Command failures use the same status vocabulary as successful output, on
+ * stderr, so a machine-readable stdout stream stays clean.
+ */
+function failureText(message: string): string {
+  return new TerminalDocument(stderrTheme()).entry("failure", message).render()
 }
 
 async function main(): Promise<void> {
-  const { positionals, values } = parseArgs({
-    allowPositionals: true,
-    options: {
-      artifacts: { type: "string", default: ".flakelab/runs" },
-      bad: { type: "string", default: "HEAD" },
-      "bisect-parallelism": { type: "string", default: "2" },
-      "bisect-report": { type: "string", default: "flakelab.bisect.json" },
-      concurrency: { type: "string", default: "4" },
-      "delay-ms": { type: "string", default: "250" },
-      "max-cost": { type: "string", default: "0.25" },
-      "max-delay": { type: "string", default: "250" },
-      "max-experiments": { type: "string", default: "3" },
-      "max-seconds": { type: "string", default: "90" },
-      "max-steps": { type: "string", default: "3" },
-      "max-trials": { type: "string", default: "12" },
-      "min-rate": { type: "string", default: "0.7" },
-      html: { type: "string", default: "flakelab.report.html" },
-      good: { type: "string", default: "" },
-      help: { type: "boolean", short: "h", default: false },
-      model: { type: "string", default: "qwen/qwen3.8-27b" },
-      open: { type: "boolean", default: false },
-      output: { type: "string", default: "flakelab.repro.yaml" },
-      patch: { type: "string", default: "candidate.diff" },
-      pattern: { type: "string", default: "**/api/checkout" },
-      publish: { type: "boolean", default: false },
-      proof: { type: "string", default: "flakelab.proof.json" },
-      prove: { type: "boolean", default: false },
-      report: { type: "string", default: "flakelab.investigation.json" },
-      reproducer: { type: "string", default: "flakelab.repro.yaml" },
-      runs: { type: "string", default: "4" },
-      seed: { type: "string", default: "1" },
-      trials: { type: "string", default: "4" },
-      verbose: { type: "boolean", default: false },
-      version: { type: "boolean", short: "v", default: false },
-    },
-  })
-  if (values.version) {
-    process.stdout.write(`${VERSION}\n`)
-    return
+  let providerCommand = false
+  try {
+    const invocation = parseCliArguments(process.argv.slice(2))
+    if (invocation.command === "help") {
+      process.stdout.write(helpText(invocation.topic, stdoutTheme()))
+      return
+    }
+    if (invocation.command === "version") {
+      writeStdout(VERSION)
+      return
+    }
+    providerCommand = PROVIDER_COMMANDS.has(invocation.command)
+    await runCommand(invocation)
+  } catch (error) {
+    let message = "FlakeLab failed"
+    if (error instanceof Error) {
+      message = providerCommand ? await providerErrorMessage(error) : error.message
+    }
+    writeStderr(failureText(message))
+    process.exitCode = 1
   }
-  if (values.help || positionals.length === 0) {
-    process.stdout.write(helpText())
-    return
-  }
-  const [first, second] = positionals
-  if (ADVANCED_COMMANDS.has(first)) {
-    await runAdvanced(first, second, values)
-    return
-  }
-  if (second) {
-    throw new Error("Default scan accepts one path. Run flakelab --help for command usage.")
-  }
-  if (values.prove) {
-    await prove(first, values)
-    return
-  }
-  await scan(first, values)
 }
 
-try {
-  await main()
-} catch (error) {
-  console.error(error instanceof Error ? error.message : "FlakeLab failed")
-  process.exitCode = 1
-}
+await main()

@@ -94,7 +94,12 @@ export class InvestigationLedger {
     this.#conclusionHypothesisId = hypothesisId
   }
 
-  buildReport(test: string, model: string, usage: UsageSummary): InvestigationReport {
+  buildReport(
+    test: string,
+    model: string,
+    sourcePaths: string[],
+    usage: UsageSummary,
+  ): InvestigationReport {
     if (!this.#conclusion) {
       throw new Error("Investigator did not record a conclusion")
     }
@@ -109,9 +114,9 @@ export class InvestigationLedger {
       throw new Error("Investigator did not reject a competing hypothesis")
     }
     return investigationReportSchema.parse({
-      version: 1,
       test,
       model,
+      sourcePaths,
       conclusion: this.#conclusion,
       conclusionHypothesisId: this.#conclusionHypothesisId,
       conclusionEvidenceIds: this.#conclusionEvidenceIds,

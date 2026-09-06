@@ -1,0 +1,38 @@
+---
+title: Command map
+description: Twelve commands, grouped by what they cost you.
+---
+
+| Command | Provider use | Purpose |
+| --- | --- | --- |
+| [`scan`](/docs/commands/scan) | None | Repeat a Playwright target under normal conditions and classify outcomes. |
+| [`analyze`](/docs/commands/analyze) | None | Triage an existing Playwright blob report without rerunning tests. |
+| [`doctor`](/docs/commands/doctor) | None | Check runtime, Playwright, browser, privacy, and credential readiness. |
+| [`diagnose`](/docs/commands/diagnose) | Optional | Start with evidence and run only the explicitly requested next phases. |
+| [`discover`](/docs/commands/discover) | None | Search one fault family and minimize a deterministic trigger. |
+| [`replay`](/docs/commands/replay) | None | Re-run a saved reproducer and verify its failure signature. |
+| [`investigate`](/docs/commands/investigate) | Groq | Compare bounded hypotheses against experiments and write an assessment. |
+| [`repair`](/docs/commands/repair) | Groq + Solari | Generate a constrained source candidate and prove it in isolation. |
+| [`prove`](/docs/commands/prove) | Groq + Solari | Run discover, replay, investigate, repair, and report as one pipeline. |
+| [`report`](/docs/commands/report) | Solari only with `--publish` | Build one portable offline HTML evidence report. |
+| [`resume`](/docs/commands/resume) | Depends on pending phase | Continue a checkpoint without repeating completed work. |
+| [`bisect`](/docs/commands/bisect) | Solari | Statistically locate the revision that introduced a reproducer. |
+
+## Getting help
+
+```bash
+flakelab --help
+flakelab discover --help
+flakelab --version
+```
+
+The main help groups commands by stage. Command-specific help lists only that command's
+options and examples.
+
+## Global behavior
+
+- Human summaries go to stdout; progress and provider notices go to stderr.
+- `--json` output is clean, parseable JSON with no banners or colour.
+- Colour follows `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `CI`, and TTY detection.
+- Exit codes are stable: `0` no failure observed, `1` failure or command error, `2`
+  inconclusive.

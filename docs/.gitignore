@@ -1,0 +1,16 @@
+# dependencies
+/node_modules
+
+# generated content and Next.js output
+/.source
+/.next
+/out
+*.tsbuildinfo
+next-env.d.ts
+
+# local tooling and deployment state
+/.vercel
+.env*.local
+.DS_Store
+*.pem
+

@@ -1,0 +1,63 @@
+---
+title: Lifecycle
+description: Resource loading, startup events, and main-thread deadlines.
+---
+
+Lifecycle faults probe the assumption that an application is ready when the test starts
+interacting with it.
+
+## `resource-loading-delay`
+
+Delays one *type* of resource so you can isolate which dependency the application actually
+waits for. Accepts `document`, `script`, `stylesheet`, `image`, or `font`.
+
+```bash
+flakelab discover tests/startup.spec.ts \
+  --fault resource-loading-delay \
+  --resource-type script \
+  --max-delay 250
+```
+
+Type isolation matters: a test that survives a slow image but breaks on a slow script has
+told you something specific about its readiness contract.
+
+## `startup-event-delay`
+
+Independently postpones the application's `DOMContentLoaded` or `load` listeners. Accepts
+`dom-content-loaded` or `load`.
+
+```bash
+flakelab discover tests/hydration.spec.ts \
+  --fault startup-event-delay \
+  --startup-event dom-content-loaded \
+  --max-delay 750
+```
+
+This separates "the page is parsed" from "the application has hydrated", which is where many
+framework-level flakes live.
+
+## `event-loop-stall`
+
+Blocks the main thread for a bounded duration, starting a deterministic offset after
+`DOMContentLoaded`. It reproduces missed main-thread deadlines - an interaction that assumed
+the browser stayed responsive.
+
+```bash
+flakelab discover tests/interaction.spec.ts \
+  --fault event-loop-stall \
+  --max-stall-ms 500 \
+  --stall-after-ms 25
+```
+
+Stalls are bounded at two seconds. Discovery reports the observed duration boundary and
+saves a reproducer with a stability margin above it.
+
+## Options
+
+| Option | Applies to | Default |
+| --- | --- | --- |
+| `--resource-type <type>` | `resource-loading-delay` | `script` |
+| `--startup-event <event>` | `startup-event-delay` | `dom-content-loaded` |
+| `--max-delay <ms>` | both delay faults | `250` |
+| `--max-stall-ms <ms>` | `event-loop-stall` | `500` |
+| `--stall-after-ms <ms>` | `event-loop-stall` | `0` |

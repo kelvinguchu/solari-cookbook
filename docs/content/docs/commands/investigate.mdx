@@ -1,0 +1,43 @@
+---
+title: investigate
+description: Run the bounded Groq investigator over compact, redacted experiment results.
+---
+
+```bash
+flakelab investigate <test> [options]
+```
+
+Runs a bounded two-call Groq workflow: first propose competing hypotheses and an experiment
+batch, then assess the resulting evidence.
+
+FlakeLab executes the trials and calculates confidence. **The model cannot declare causality
+by itself.**
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--report <path>` | `flakelab.investigation.json` | Investigation artifact. |
+| `--max-steps <number>` | `3` | Reasoning-step bound. |
+| `--max-experiments <n>` | `3` | Experiment bound. |
+| `--max-trials <number>` | `12` | Trial ceiling across investigation. |
+| `--max-seconds <number>` | `90` | Elapsed-time ceiling. |
+| `--model <name>` | `qwen/qwen3.8-27b` | Groq model identifier. |
+| `--max-cost <usd>` | `0.25` | Model spend ceiling. |
+| `--prompt-credentials` | off | Request a hidden run-once key. |
+
+It also accepts `--trials`, `--concurrency`, `--max-delay`, `--min-rate`, `--pattern`, and
+`--seed`.
+
+## What the model receives
+
+Only the selected test and at most **eight** path-confined local imports, within a shared
+64 KiB limit. Credential-like source is blocked before transmission.
+
+The investigator sees compact objective results - counts, rates, bounds, and normalized
+signatures - rather than raw logs, browser storage, or replay data.
+
+<Callout type="warn">
+This command uses Groq and therefore costs money. The boundary notice printed before the
+first call names the model, the spend ceiling, the time ceiling, and the credentials in use.
+</Callout>

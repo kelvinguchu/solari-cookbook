@@ -1,0 +1,77 @@
+---
+title: Solari
+description: How isolated proof, snapshots, browser sessions, and bisect use Solari.
+---
+
+FlakeLab connects directly to Solari from the developer machine or CI runner. There is no
+FlakeLab credential relay and no hosted control plane.
+
+## Repair proof
+
+The candidate patch is copied into a disposable Solari sandbox. FlakeLab runs project
+preparation with pinned tooling, type checking, linting, hostile reproducer trials, matched
+clean controls, and up to 50 nested or co-located regression spec files, then destroys the
+sandbox in guaranteed cleanup paths.
+
+The patch remains outside the local checkout. A failed proof is still valuable evidence and
+is reported as a rejection, not silently applied.
+
+## Snapshots and parallel trials
+
+Prepared environments can be snapshotted and forked so independent trials begin from the
+same machine state without repeating installation.
+
+Cache keys cover the commit, lockfile, fixture, template, runtime command, application path,
+port, and timeout. A mismatch is a cache miss with an explicit reason. Unique candidate
+workspaces are deliberately not cached, and FlakeLab says why.
+
+For browser-only faults, one prepared application sandbox can serve multiple independent
+Solari browser sessions. Metrics track wall time, cumulative trial time, peak concurrency,
+infrastructure retries, cache decisions, and created or released resources.
+
+## Statistical bisect
+
+Historical revisions are archived locally without credentials, then installed and executed
+only in disposable Solari machines. Candidate revisions can be prepared concurrently, and
+probabilistic trials use independent forks of a revision snapshot.
+
+## Temporary report publication
+
+The default report is a local offline file. Publication uploads only the redacted report
+after an immediate interactive confirmation, exposes it through a signed Solari preview, and
+destroys the hosting sandbox after at most one hour.
+
+## Costs
+
+Local `doctor`, `scan`, `analyze`, `diagnose` without provider phases, `discover`, `replay`,
+and `report` without publication consume no Groq or Solari credits.
+
+Provider-backed operations are explicit:
+
+- `investigate` uses Groq;
+- `repair` and `prove` use Groq and Solari;
+- `bisect` uses Solari;
+- publishing a report uses a temporary Solari sandbox.
+
+Defaults keep work bounded: a 0.25 USD model ceiling, three reasoning steps, three
+experiments, 12 investigation trials, 90-second AI-operation ceilings, a five-minute
+discovery ceiling, single-worker local execution, and two concurrent bisect preparation
+sandboxes.
+
+<Callout type="info">
+Actual Solari cost depends on preparation time, project installation, trial duration,
+concurrency, and whether a valid snapshot can be reused. When FlakeLab cannot calculate a
+reliable estimate, it says so instead of inventing one.
+</Callout>
+
+## Reference
+
+- [Sandboxes](https://docs.getsolari.com/sandboxes) run commands and preserve machine state.
+- [Snapshots](https://docs.getsolari.com/snapshots) capture a prepared machine and create
+  independent copies.
+- [Browser sessions](https://docs.getsolari.com/sessions) expose a real browser through the
+  standard Playwright API.
+- [Session recording](https://docs.getsolari.com/recording) can provide optional replay
+  evidence, and must be handled carefully when pages contain sensitive input.
+- [Browser API](https://docs.getsolari.com/api-reference/browser) documents session
+  creation, connection endpoints, and release behavior.

@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* ---------------------------------------------------------------------------
+   1. Type system
+
+   Geist Mono is the only family on this site. Prose, headings, navigation, and
+   evidence all share one grid, so a command, a percentage, and a sentence line
+   up against the same rhythm.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius: 2px;
+
+  --color-fl-ink: #09111a;
+  --color-fl-slate: #162331;
+  --color-fl-cyan: #27d3c2;
+  --color-fl-lime: #b7f34a;
+  --color-fl-amber: #ffb84d;
+  --color-fl-coral: #ff647c;
+  --color-fl-mist: #eaf2f4;
+  --color-fl-steel: #8fa3ad;
+}
+
+/* ---------------------------------------------------------------------------
+   2. Palette
+
+   Light mode is paper with ink. Dark mode is an instrument panel: near-black
+   ground, one cyan accent, and semantic lime / amber / coral reserved for
+   evidence states. Nothing else is coloured.
+--------------------------------------------------------------------------- */
+
+:root {
+  --color-fd-background: #ffffff;
+  --color-fd-foreground: #09111a;
+  --color-fd-muted: #f2f5f6;
+  --color-fd-muted-foreground: #5a6b75;
+  --color-fd-border: #dde5e8;
+  --color-fd-card: #fbfcfd;
+  --color-fd-card-foreground: #09111a;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #09111a;
+  --color-fd-primary: #0f8b80;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #f2f5f6;
+  --color-fd-secondary-foreground: #09111a;
+  --color-fd-accent: #eaf2f4;
+  --color-fd-accent-foreground: #09111a;
+  --color-fd-ring: #0f8b80;
+
+  --fl-accent: #0f8b80;
+  --fl-grid: rgba(9, 17, 26, 0.06);
+  --fl-ascii: 90, 107, 117;
+  --fl-canvas: #ffffff;
+}
+
+.dark {
+  --color-fd-background: #060c12;
+  --color-fd-foreground: #eaf2f4;
+  --color-fd-muted: #101c27;
+  --color-fd-muted-foreground: #8fa3ad;
+  --color-fd-border: #1c2b39;
+  --color-fd-card: #0b141d;
+  --color-fd-card-foreground: #eaf2f4;
+  --color-fd-popover: #0b141d;
+  --color-fd-popover-foreground: #eaf2f4;
+  --color-fd-primary: #27d3c2;
+  --color-fd-primary-foreground: #060c12;
+  --color-fd-secondary: #101c27;
+  --color-fd-secondary-foreground: #eaf2f4;
+  --color-fd-accent: #162331;
+  --color-fd-accent-foreground: #eaf2f4;
+  --color-fd-ring: #27d3c2;
+
+  --fl-accent: #27d3c2;
+  --fl-grid: rgba(234, 242, 244, 0.06);
+  --fl-ascii: 143, 163, 173;
+  --fl-canvas: #060c12;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Base
+--------------------------------------------------------------------------- */
+
+html {
+  scrollbar-gutter: stable;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-mono);
+  font-feature-settings: "ss01" 1, "zero" 1, "cv01" 1;
+  letter-spacing: -0.011em;
+}
+
+/* Monospace headings need tighter tracking to stop reading as a wall. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.03em;
+  font-weight: 500;
+}
+
+/* Fumadocs applies a serif/sans stack to prose; force it back onto the grid. */
+#nd-docs-layout,
+#nd-page,
+.prose,
+[class*="fd-"] {
+  font-family: var(--font-mono);
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0 !important;
+  --removed-body-scroll-bar-size: 0 !important;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--fl-accent) 28%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   4. Prose
+
+   Mono runs wide, so the measure is capped tighter than a sans default and
+   line-height is opened slightly.
+--------------------------------------------------------------------------- */
+
+.prose {
+  --fd-prose-width: 68ch;
+  font-size: 0.9375rem;
+  line-height: 1.75;
+}
+
+.prose :where(h2) {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-fd-border);
+}
+
+.prose :where(code):not(:where(pre code)) {
+  font-weight: 500;
+  border-radius: 2px;
+}
+
+.prose :where(table) {
+  font-size: 0.8125rem;
+}
+
+.prose :where(th) {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+/* ---------------------------------------------------------------------------
+   5. Utilities
+--------------------------------------------------------------------------- */
+
+/* An engineering label: small, spaced, quiet. Used for section eyebrows. */
+.fl-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-fd-muted-foreground);
+}
+
+/*
+ * The Fumadocs home header is `sticky h-14`, so it occupies 56px of normal
+ * flow at the top of the page. The hero subtracts exactly that, which makes
+ * header + hero total one viewport and nothing more.
+ */
+#nd-home-layout {
+  --fl-header-height: 3.5rem;
+}
+
+.fl-hero {
+  min-height: calc(100svh - var(--fl-header-height));
+}
+
+/* A hairline measurement grid, used behind the landing sections. */
+.fl-grid {
+  background-image:
+    linear-gradient(to right, var(--fl-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--fl-grid) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+.fl-rule {
+  border-top: 1px solid var(--color-fd-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

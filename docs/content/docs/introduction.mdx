@@ -1,0 +1,123 @@
+---
+title: Introduction
+description: Why a flaky test is an uncontrolled experiment, and what FlakeLab does about it.
+---
+
+## The problem
+
+A flaky end-to-end test passes and fails without a relevant source change. A retry may make
+the build green, and a trace may show what happened during one failure, but neither proves
+*why* the outcome changed. Developers are left comparing noisy runs, increasing timeouts, or
+quarantining a test that may be exposing a real product race.
+
+## The approach
+
+FlakeLab turns that uncertainty into a controlled experiment:
+
+<Steps>
+
+<Step>
+### Observe
+
+Run the test repeatedly under normal conditions and classify every outcome.
+</Step>
+
+<Step>
+### Intervene
+
+Introduce one bounded fault while running matched clean controls on the same seeds.
+</Step>
+
+<Step>
+### Minimize
+
+Shrink the trigger to the smallest value that still reliably changes the outcome.
+</Step>
+
+<Step>
+### Explain
+
+Ask a bounded AI investigator to compare competing explanations using compact evidence.
+</Step>
+
+<Step>
+### Repair
+
+Generate one tightly constrained application-source patch.
+</Step>
+
+<Step>
+### Prove
+
+Run the candidate against hostile and clean trials in an isolated Solari microVM.
+</Step>
+
+<Step>
+### Review
+
+Read the reproducer, investigation, candidate diff, proof matrix, and offline HTML report.
+</Step>
+
+</Steps>
+
+The principle is simple: **AI proposes; deterministic evidence decides.**
+
+## What FlakeLab is
+
+- A CLI for Playwright test stability analysis.
+- A deterministic fault-injection and trigger-minimization engine.
+- An evidence-bounded AI investigator.
+- A constrained application-source repair generator.
+- An isolated proof runner built on Solari.
+- A producer of portable, reviewable artifacts.
+
+## What FlakeLab is not
+
+- A replacement for Playwright.
+- A hosted test-history dashboard.
+- A cross-browser device cloud.
+- A general-purpose chaos engineering platform.
+- An autonomous bot that edits the local checkout or opens a pull request.
+- A reason to hide failures with retries, larger timeouts, or weaker assertions.
+
+## Who it is for
+
+FlakeLab is useful for developers, SDETs, and platform teams who already have Playwright
+tests and need to answer questions such as:
+
+- Is this failure actually intermittent, consistently broken, skipped, or an infrastructure
+  error?
+- Does network timing, browser state, startup ordering, locale, viewport, animation, clock
+  behavior, or suite concurrency cause it?
+- What is the smallest reproducible trigger?
+- Does the same failure signature appear under intervention and disappear under a matched
+  control?
+- Can a narrow source-code change remove the trigger without weakening the test?
+- Which commit introduced the behavior?
+
+## Requirements
+
+- Node.js 20 or newer.
+- A Playwright project using `@playwright/test` 1.62.1.
+- A locally installed Chromium browser for local execution.
+- pnpm in projects whose setup depends on pnpm.
+- `GROQ_API_KEY` only for AI investigation or repair.
+- `SOLARI_API_KEY` only for isolated repair proof, publication, or statistical bisect.
+
+## Installation
+
+Run without a global install:
+
+```bash
+npx flakelab@latest .
+```
+
+Or add it to a Playwright project:
+
+```bash
+pnpm add -D flakelab
+pnpm exec flakelab doctor
+```
+
+FlakeLab uses the project's existing Playwright configuration. Tests continue to import
+`test` and `expect` from `@playwright/test`; no FlakeLab fixture or source edit is required.

@@ -14,7 +14,7 @@ export function planTrials(request: RunRequest): TrialPlan[] {
       trialId: `trial-${String(index + 1).padStart(3, "0")}-${seed}`,
       index,
       seed,
-      fault: index % 2 === 1 ? request.fault : undefined,
+      faults: index % 2 === 1 ? request.faults : [],
     }
   })
 }

@@ -8,7 +8,7 @@ const request = runRequestSchema.parse({
   runs: 4,
   seed: 42,
   artifactDirectory: ".flakelab/runs",
-  fault: { kind: "network-delay", pattern: "**/api/checkout", delayMs: 250 },
+  faults: [{ kind: "network-delay", pattern: "**/api/checkout", delayMs: 250 }],
 })
 
 test("trial plans are repeatable and alternate baseline with fault trials", () => {
@@ -22,7 +22,7 @@ test("trial plans are repeatable and alternate baseline with fault trials", () =
     1_013_904_268,
     3_668_340_029,
   ])
-  expect(first.map((trial) => trial.fault?.kind ?? "baseline")).toEqual([
+  expect(first.map((trial) => trial.faults[0]?.kind ?? "baseline")).toEqual([
     "baseline",
     "network-delay",
     "baseline",

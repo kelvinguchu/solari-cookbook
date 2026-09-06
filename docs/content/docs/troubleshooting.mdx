@@ -1,0 +1,69 @@
+---
+title: Troubleshooting
+description: The failure modes you are most likely to hit, and what they actually mean.
+---
+
+## "No failure observed"
+
+This means only that the bounded sample passed. Increase `--runs` for observation, or choose
+a plausible fault family for discovery.
+
+Use the reported confidence upper bound to interpret how much uncertainty remains - four
+clean runs bound the failure rate below roughly 29%, which is a weak statement.
+
+## A fault did not apply
+
+Check `--pattern`, the request protocol, the document URL, the resource type, the cookie or
+storage key, and whether the chosen adapter supports the context change.
+
+FlakeLab rejects unapplied faults specifically to avoid false causal claims. An error here
+is the tool refusing to lie to you.
+
+## Discovery ended without a confident trigger
+
+If the control arm is itself noisy, the acceptance gate will not clear. Options:
+
+- raise `--trials` so the confidence bounds tighten;
+- narrow the target so fewer unrelated tests are in the sample;
+- pick a fault family that matches the suspected mechanism;
+- raise `--max-seconds` if the search was cut short by its time ceiling.
+
+## The suite behaves differently with concurrency
+
+The default is one worker because arbitrary projects may share ports, databases, accounts,
+or files.
+
+Use [`worker-pressure` or `shared-state-interference`](/docs/faults/concurrency) to
+investigate this deliberately, rather than raising `--concurrency` during an unrelated
+experiment.
+
+## Provider authentication or quota failure
+
+Run `flakelab doctor`. Confirm the required key is present and has permission and balance.
+Use `--prompt-credentials` to enter a replacement without changing `.env`.
+
+FlakeLab distinguishes authentication, permission, billing, rate limit, concurrency,
+capacity, network, timeout, and invalid-request failures rather than reporting one generic
+error.
+
+## A proof candidate is rejected before execution
+
+Review `candidate.diff` and the stated policy reason. Rejection is expected when a candidate
+edits tests or configuration, weakens assertions, changes only a timeout number, escapes
+approved paths, adds credential-like text, or touches source the model never received.
+
+## A diagnosis was interrupted
+
+```bash
+flakelab resume .flakelab/runs/diagnose.json
+```
+
+Resume validates the checkpoint and continues at the next safe phase without repeating
+confirmed work.
+
+## The HTML report did not open
+
+Open `flakelab.report.html` directly, rerun with `--open`, or accept the interactive prompt.
+
+The report is intentionally self-contained and works without a local server. CI and
+redirected output never launch a browser.

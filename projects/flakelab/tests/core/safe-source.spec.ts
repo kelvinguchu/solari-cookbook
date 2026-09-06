@@ -3,7 +3,11 @@ import { expect, test } from "@playwright/test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
-import { readSafeTestContext, readSafeTestSource } from "../../src/investigator/safe-source.js"
+import {
+  readSafeRepairContext,
+  readSafeTestContext,
+  readSafeTestSource,
+} from "../../src/investigator/safe-source.js"
 
 async function prepareFixtureRoot(fixtureRoot: string): Promise<string> {
   await mkdir(fixtureRoot, { recursive: true })
@@ -49,4 +53,22 @@ test("safe source reader bounds paths and blocks credential-like assignments", a
   await expect(readSafeTestSource(process.cwd(), "../outside.spec.ts")).rejects.toThrow(
     /inside the project/u,
   )
+})
+
+test("repair context includes explicitly approved application sources", async (
+  { browserName: _browserName },
+  testInfo,
+) => {
+  const fixtureRoot = await prepareFixtureRoot(testInfo.outputPath("repair-source"))
+  const testPath = resolve(fixtureRoot, "checkout.spec.ts")
+  const applicationPath = resolve(fixtureRoot, "checkout-controller.ts")
+  await writeFile(testPath, "test('checkout', async () => true)\n", "utf8")
+  await writeFile(applicationPath, "export const completeCheckout = () => 'complete'\n", "utf8")
+
+  const context = await readSafeRepairContext(process.cwd(), testPath, [applicationPath])
+
+  expect(context.map((source) => source.path)).toEqual([
+    expect.stringContaining("checkout.spec.ts"),
+    expect.stringContaining("checkout-controller.ts"),
+  ])
 })

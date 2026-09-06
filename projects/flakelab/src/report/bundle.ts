@@ -1,18 +1,20 @@
-import { build } from "vite"
 import { existsSync } from "node:fs"
-import { mkdir, writeFile } from "node:fs/promises"
-import { dirname } from "node:path"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { EvidenceReport } from "./schema.js"
 
+const CLIENT_SCRIPT = "report-client.js"
+const CLIENT_STYLES = "report-client.css"
+
 function escapeEmbeddedJson(value: EvidenceReport): string {
   return JSON.stringify(value)
-    .replaceAll("<", "\\u003c")
-    .replaceAll(">", "\\u003e")
-    .replaceAll("&", "\\u0026")
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029")
+    .replaceAll("<", String.raw`\u003c`)
+    .replaceAll(">", String.raw`\u003e`)
+    .replaceAll("&", String.raw`\u0026`)
+    .replaceAll("\u2028", String.raw`\u2028`)
+    .replaceAll("\u2029", String.raw`\u2029`)
 }
 
 function escapeHtml(value: string): string {
@@ -29,18 +31,26 @@ function htmlDocument(report: EvidenceReport, script: string, styles: string): s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
   <title>FlakeLab · ${escapeHtml(report.test)}</title>
   <style>${styles}</style>
 </head>
 <body>
   <div id="root"></div>
   <script id="flakelab-report" type="application/json">${escapeEmbeddedJson(report)}</script>
-  <script type="module">${script.replaceAll("</script", "<\\/script")}</script>
+  <script type="module">${script.replaceAll("</script", String.raw`<\/script`)}</script>
 </body>
 </html>
 `
+}
+
+async function readClientAsset(projectRoot: string, name: string): Promise<string> {
+  const installedPath = fileURLToPath(new URL(`./${name}`, import.meta.url))
+  const assetPath = existsSync(installedPath)
+    ? installedPath
+    : resolve(projectRoot, "dist", "report", name)
+  return readFile(assetPath, "utf8")
 }
 
 export async function writePortableReport(
@@ -48,30 +58,10 @@ export async function writePortableReport(
   outputPath: string,
   report: EvidenceReport,
 ): Promise<void> {
-  const sourceEntry = fileURLToPath(new URL("./browser-entry.tsx", import.meta.url))
-  const compiledEntry = fileURLToPath(new URL("./browser-entry.js", import.meta.url))
-  const result = await build({
-    configFile: false,
-    logLevel: "silent",
-    root: projectRoot,
-    build: {
-      cssCodeSplit: false,
-      minify: true,
-      write: false,
-      rollupOptions: {
-        input: existsSync(sourceEntry) ? sourceEntry : compiledEntry,
-      },
-    },
-  })
-  const outputs = Array.isArray(result) ? result : [result]
-  const entries = outputs.flatMap((output) => "output" in output ? output.output : [])
-  const script = entries.find((entry) => entry.type === "chunk" && entry.isEntry)
-  const stylesheet = entries.find((entry) =>
-    entry.type === "asset" && entry.fileName.endsWith(".css"))
-  if (script?.type !== "chunk") {
-    throw new Error("Vite did not produce the FlakeLab report script")
-  }
-  const styles = stylesheet?.type === "asset" ? stylesheet.source.toString() : ""
+  const [script, styles] = await Promise.all([
+    readClientAsset(projectRoot, CLIENT_SCRIPT),
+    readClientAsset(projectRoot, CLIENT_STYLES),
+  ])
   await mkdir(dirname(outputPath), { recursive: true })
-  await writeFile(outputPath, htmlDocument(report, script.code, styles), "utf8")
+  await writeFile(outputPath, htmlDocument(report, script, styles), "utf8")
 }

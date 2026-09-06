@@ -1,0 +1,56 @@
+---
+title: Network
+description: Timing, truncation, duplication, and ordering faults on matched requests.
+---
+
+Network faults apply to requests matching `--pattern`. The pattern is a glob against the
+request URL, for example `**/api/checkout`.
+
+## `network-delay`
+
+Delays matched responses. This is the default family and the most common cause of an
+end-to-end race: a UI that assumes an API answers before a deadline.
+
+```bash
+flakelab discover tests/checkout.spec.ts \
+  --fault network-delay \
+  --pattern "**/api/checkout" \
+  --max-delay 250
+```
+
+Discovery minimizes toward the smallest delay that still changes the outcome, so the result
+reads as a boundary - "fails at 61 ms, passes at 60 ms" - rather than a blunt timeout.
+
+## `response-truncation`
+
+Removes bytes from the end of a matched response body, probing how the application handles
+an incomplete payload.
+
+```bash
+flakelab discover tests/payload.spec.ts \
+  --fault response-truncation \
+  --max-remove-bytes 64
+```
+
+Minimization finds the smallest number of removed bytes that breaks parsing or rendering.
+
+## `response-duplication`
+
+Appends a duplicated tail to a matched response body, probing tolerance of repeated or
+malformed trailing content. Bounded by `--max-duplicate-bytes`.
+
+## `response-reordering`
+
+Holds one matched response so an adjacent matching response arrives first, probing races
+between two requests the application assumed would resolve in order. Bounded by
+`--max-hold-ms`.
+
+## Options
+
+| Option | Applies to | Default |
+| --- | --- | --- |
+| `--pattern <glob>` | all network faults | `**/api/checkout` |
+| `--max-delay <ms>` | `network-delay` | `250` |
+| `--max-remove-bytes <n>` | `response-truncation` | `1024` |
+| `--max-duplicate-bytes <n>` | `response-duplication` | `1024` |
+| `--max-hold-ms <ms>` | `response-reordering` | `250` |

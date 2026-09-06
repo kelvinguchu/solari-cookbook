@@ -1,0 +1,40 @@
+---
+title: bisect
+description: Statistically locate the revision that introduced a reproducer.
+---
+
+```bash
+flakelab bisect --good <revision> [options]
+```
+
+Archives historical revisions without Git credentials, prepares them in disposable Solari
+sandboxes, and measures both endpoints and candidate commits. **Historical code is never
+executed on the developer machine.**
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--good <revision>` | required | Last revision believed healthy; it is still measured. |
+| `--bad <revision>` | `HEAD` | Revision showing the failure. |
+| `--reproducer <path>` | `flakelab.repro.yaml` | Failure definition. |
+| `--bisect-parallelism <n>` | `2` | Concurrent Solari preparation sandboxes. |
+| `--bisect-report <path>` | `flakelab.bisect.json` | Evidence artifact. |
+| `--max-trials <number>` | `12` | Trial ceiling per revision. |
+| `--min-rate <rate>` | `0.7` | Confidence threshold used for good/bad classification. |
+| `--concurrency <n>` | `1` | Test workers in a revision trial. |
+| `--prompt-credentials` | off | Re-enter the Solari key through hidden input. |
+
+## Statistical, not binary
+
+A flaky failure cannot be bisected with a single pass/fail per commit. Each revision is
+measured with repeated trials and classified by confidence bound.
+
+The selected good revision must be an ancestor of the bad revision. The first failing commit
+is reported only when the boundary is exact. Incompatible or statistically inconclusive
+commits yield an earliest known bad commit, exit code `2`, and no overclaimed exact answer.
+
+<Callout type="info">
+Bisect assumes a compatible pnpm/Playwright history and works best when the failure boundary
+is approximately monotonic.
+</Callout>

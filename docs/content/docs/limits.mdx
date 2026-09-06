@@ -1,0 +1,46 @@
+---
+title: Current limits
+description: What FlakeLab cannot do, stated plainly.
+---
+
+Knowing where a tool stops is part of trusting what it claims.
+
+## Scope
+
+- Playwright only. There is no Cypress, Selenium, WebdriverIO, or native mobile runner
+  integration.
+- The peer contract requires `@playwright/test` 1.62.1.
+- Fault coverage is broad but finite. An unknown cause may remain outside the 17 supported
+  families.
+
+## Faults
+
+- Some proxy-based faults require matching HTTP traffic and reject HTTPS-only or unmatched
+  routes rather than claiming success.
+- Context-level locale, timezone, and related browser settings cannot be faithfully
+  retrofitted onto every existing page adapter.
+
+## Repair and proof
+
+- AI repair is intentionally narrow and may return no candidate when safe source context is
+  insufficient.
+- The local checkout is never modified. Applying or adapting the candidate remains a human
+  decision.
+- Proof is bounded and cannot establish universal correctness.
+
+## Bisect
+
+- Bisect assumes a compatible pnpm and Playwright history, and works best when the failure
+  boundary is approximately monotonic.
+- Incompatible or inconclusive revisions can prevent an exact first-failing commit.
+
+## Infrastructure
+
+- Cold Solari setup can be materially slower than a snapshot hit.
+- There is no hosted database, team dashboard, quarantine service, test generator, or silent
+  self-healing mode.
+
+<Callout type="info">
+When FlakeLab cannot calculate a reliable cost or duration estimate, it says so rather than
+inventing one. The same rule applies to causal claims.
+</Callout>

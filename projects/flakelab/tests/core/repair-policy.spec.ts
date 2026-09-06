@@ -1,25 +1,26 @@
+import type { TestInfo } from "@playwright/test"
 import { expect, test } from "@playwright/test"
 
-import { mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
 import { validateCandidatePatch } from "../../src/repair/policy.js"
 
-const fixtureRoot = resolve(".flakelab", "repair-policy-tests")
 const appPath = "app.ts"
 const testPath = "app.spec.ts"
 
-test.beforeEach(async () => {
+async function createFixture(testInfo: TestInfo): Promise<string> {
+  const fixtureRoot = testInfo.outputPath("repair-policy-tests")
   await mkdir(fixtureRoot, { recursive: true })
   await writeFile(resolve(fixtureRoot, appPath), "const deadline = setTimeout(expire, 100)\n", "utf8")
   await writeFile(resolve(fixtureRoot, testPath), "expect(status).toBe('complete')\n", "utf8")
-})
+  return fixtureRoot
+}
 
-test.afterEach(async () => {
-  await rm(fixtureRoot, { force: true, recursive: true })
-})
-
-test("repair policy permits a narrow application edit", async () => {
+test("repair policy permits a narrow application edit", async ({
+  browserName: _browserName,
+}, testInfo) => {
+  const fixtureRoot = await createFixture(testInfo)
   const candidate = {
     summary: "Complete checkout after the request settles",
     rationale: "The completion state should reflect the resolved request",
@@ -38,7 +39,10 @@ test("repair policy permits a narrow application edit", async () => {
   )).resolves.toEqual(candidate)
 })
 
-test("repair policy rejects test edits and numeric-only timeout increases", async () => {
+test("repair policy rejects test edits and numeric-only timeout increases", async ({
+  browserName: _browserName,
+}, testInfo) => {
+  const fixtureRoot = await createFixture(testInfo)
   const timeoutIncrease = {
     summary: "Increase the application deadline to hide latency",
     rationale: "A larger timer would make the current example pass",

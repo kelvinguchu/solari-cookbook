@@ -1,0 +1,57 @@
+---
+title: repair
+description: Generate one policy-bounded candidate and prove it in a disposable Solari microVM.
+---
+
+```bash
+flakelab repair <investigation> [options]
+```
+
+Generates one application-source candidate and proves it in a disposable Solari microVM.
+**The local working tree is not changed.**
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--source <file>` | none | Explicitly approve a JS/TS source file; repeat up to seven times. |
+| `--reproducer <path>` | `flakelab.repro.yaml` | Reproducer used in hostile proof. |
+| `--patch <path>` | `candidate.diff` | Output candidate diff. |
+| `--proof <path>` | `flakelab.proof.json` | Output proof matrix. |
+| `--concurrency <n>` | `1` | Playwright workers inside proof. |
+| `--max-seconds <number>` | `90` | Candidate-generation time ceiling. |
+| `--model <name>` | `qwen/qwen3.8-27b` | Groq model identifier. |
+| `--max-cost <usd>` | `0.25` | Candidate-generation spend ceiling. |
+| `--prompt-credentials` | off | Re-enter provider keys through hidden prompts. |
+
+## Candidate policy
+
+A candidate is rejected **before it executes** when it:
+
+- changes tests or Playwright configuration;
+- weakens an assertion;
+- adds a lint suppression;
+- adds credential-like text;
+- escapes an approved path;
+- edits source that was never supplied with `--source`;
+- only increases a timeout number.
+
+## The proof matrix
+
+Inside the sandbox, FlakeLab runs project preparation with pinned tooling, type checking,
+linting, hostile reproducer trials, matched clean controls, and up to 50 nested or
+co-located regression spec files, then destroys the sandbox in a guaranteed cleanup path.
+
+```text
+  candidate accepted
+
+Proof matrix
+  Before hostile  0/4 passed - 4 failed
+  After hostile   4/4 passed - 0 failed
+  Clean control   4/4 passed - 0 failed
+  Regressions     1 nearby selector - 0 failures
+  Typecheck       passed
+  ESLint          passed
+```
+
+A failed proof is reported as a rejection with its evidence retained.

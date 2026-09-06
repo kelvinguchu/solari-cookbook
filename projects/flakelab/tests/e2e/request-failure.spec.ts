@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-import { installRequestFailure } from "../../src/faults/request-failure.js"
+import { installFaults } from "../../src/faults/install.js"
 import type { CheckoutServer } from "../support/checkout-server.js"
 import { startCheckoutServer } from "../support/checkout-server.js"
 
@@ -16,11 +16,11 @@ test.afterAll(async () => {
 
 test("HTTP failure injection is observable and fully removed", async ({ page }) => {
   await page.goto(checkout.url)
-  const removeFault = await installRequestFailure(page, {
+  const removeFault = await installFaults(page, [{
     kind: "request-failure",
     pattern: "**/api/checkout",
     statusCode: 503,
-  })
+  }])
 
   try {
     const injectedStatus = await page.evaluate(async () => {

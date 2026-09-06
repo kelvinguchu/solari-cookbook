@@ -14,10 +14,20 @@ inputs:
     required: true
   groq-api-key:
     description: Groq credential used by the bounded investigator.
-    required: true
+    required: false
+    default: ""
   solari-api-key:
     description: Solari credential used by isolated proof execution.
-    required: true
+    required: false
+    default: ""
+  blob-report:
+    description: Optional Playwright blob-report directory or archive to analyze without rerunning tests.
+    required: false
+    default: ""
+  baseline:
+    description: Optional prior FlakeLab analysis or scan artifact used to identify new signatures.
+    required: false
+    default: ""
   test:
     description: Optional Playwright test to diagnose instead of automatic changed-test selection.
     required: false
@@ -57,6 +67,7 @@ runs:
       run: pnpm --dir "$FLAKELAB_PROJECT" exec playwright install --with-deps chromium
 
     - name: Select changed tests
+      if: inputs.blob-report == ''
       id: select
       shell: bash
       env:
@@ -69,6 +80,7 @@ runs:
         --head "$FLAKELAB_HEAD"
 
     - name: Resolve diagnosis target
+      if: inputs.blob-report == ''
       id: target
       shell: bash
       env:
@@ -85,8 +97,22 @@ runs:
         fi
         echo "test=$target" >> "$GITHUB_OUTPUT"
 
+    - name: Analyze existing Playwright evidence
+      if: inputs.blob-report != ''
+      shell: bash
+      env:
+        FLAKELAB_BASELINE: ${{ inputs.baseline }}
+        FLAKELAB_BLOB_REPORT: ${{ inputs.blob-report }}
+        FLAKELAB_PROJECT: ${{ inputs.project-directory }}
+      run: |
+        args=(pnpm --dir "$FLAKELAB_PROJECT" flakelab analyze "$FLAKELAB_BLOB_REPORT" --artifacts .flakelab/analysis)
+        if [[ -n "$FLAKELAB_BASELINE" ]]; then
+          args+=(--baseline "$FLAKELAB_BASELINE")
+        fi
+        "${args[@]}"
+
     - name: Discover deterministic trigger
-      if: steps.target.outputs.test != ''
+      if: inputs.blob-report == '' && steps.target.outputs.test != ''
       shell: bash
       env:
         FLAKELAB_PROJECT: ${{ inputs.project-directory }}
@@ -97,7 +123,7 @@ runs:
         --output flakelab.repro.yaml
 
     - name: Run bounded AI investigation
-      if: steps.target.outputs.test != ''
+      if: inputs.blob-report == '' && steps.target.outputs.test != ''
       shell: bash
       env:
         FLAKELAB_PROJECT: ${{ inputs.project-directory }}
@@ -109,7 +135,7 @@ runs:
         --report flakelab.investigation.json
 
     - name: Generate and prove candidate repair
-      if: steps.target.outputs.test != ''
+      if: inputs.blob-report == '' && steps.target.outputs.test != ''
       id: repair
       continue-on-error: true
       shell: bash
@@ -120,11 +146,12 @@ runs:
       run: >-
         pnpm --dir "$FLAKELAB_PROJECT" flakelab repair flakelab.investigation.json
         --reproducer flakelab.repro.yaml
+        --max-cost 0.25
         --patch candidate.diff
         --proof flakelab.proof.json
 
     - name: Bundle portable report
-      if: steps.target.outputs.test != ''
+      if: inputs.blob-report == '' && steps.target.outputs.test != ''
       shell: bash
       env:
         FLAKELAB_PROJECT: ${{ inputs.project-directory }}
@@ -136,7 +163,7 @@ runs:
         --html flakelab.report.html
 
     - name: Upload evidence bundle
-      if: steps.target.outputs.test != ''
+      if: inputs.blob-report != '' || steps.target.outputs.test != ''
       id: artifact
       uses: actions/upload-artifact@v7.0.1
       with:
@@ -152,24 +179,37 @@ runs:
           ${{ inputs.project-directory }}/flakelab.proof.json
           ${{ inputs.project-directory }}/candidate.diff
           ${{ inputs.project-directory }}/.flakelab/changed-tests.json
+          ${{ inputs.project-directory }}/.flakelab/analysis/analyze.json
+          ${{ inputs.project-directory }}/.flakelab/analysis/playwright/**
+          ${{ inputs.project-directory }}/.flakelab/test-results/**
 
     - name: Write GitHub job summary
-      if: steps.target.outputs.test != ''
+      if: inputs.blob-report == '' && steps.target.outputs.test != ''
       shell: bash
       env:
         FLAKELAB_ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
         FLAKELAB_PROJECT: ${{ inputs.project-directory }}
       run: pnpm --dir "$FLAKELAB_PROJECT" ci:summary
 
+    - name: Write report-analysis job summary
+      if: inputs.blob-report != ''
+      shell: bash
+      env:
+        FLAKELAB_ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        FLAKELAB_PROJECT: ${{ inputs.project-directory }}
+      run: >-
+        pnpm --dir "$FLAKELAB_PROJECT" ci:summary
+        --analysis .flakelab/analysis/analyze.json
+
     - name: Enforce proof result after evidence upload
-      if: steps.target.outputs.test != '' && steps.repair.outcome == 'failure'
+      if: inputs.blob-report == '' && steps.target.outputs.test != '' && steps.repair.outcome == 'failure'
       shell: bash
       run: |
         echo 'FlakeLab rejected or could not prove the candidate repair.' >&2
         exit 1
 
     - name: Report no affected browser tests
-      if: steps.target.outputs.test == ''
+      if: inputs.blob-report == '' && steps.target.outputs.test == ''
       shell: bash
       run: |
         printf '%s\n' '## FlakeLab' '' 'No changed or affected browser tests were selected.' >> "$GITHUB_STEP_SUMMARY"

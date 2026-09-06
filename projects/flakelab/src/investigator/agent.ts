@@ -76,14 +76,24 @@ export interface InvestigatorOptions {
   trialsPerExperiment: number
 }
 
-function conditionToFault(condition: ExperimentCondition, pattern: string): Fault | undefined {
-  if (condition.kind === "network-delay") {
-    return { ...condition, pattern }
+function conditionToFault(
+  condition: ExperimentCondition,
+  pattern: string,
+  test: string,
+): Fault | undefined {
+  if (condition.kind === "baseline") {
+    return undefined
   }
-  if (condition.kind === "request-failure") {
-    return { ...condition, pattern }
-  }
-  return undefined
+  const faultPattern = condition.kind === "worker-pressure"
+    || condition.kind === "shared-state-interference"
+    ? test
+    : pattern
+  return { ...condition, pattern: faultPattern }
+}
+
+function conditionToFaults(condition: ExperimentCondition, pattern: string, test: string): Fault[] {
+  const fault = conditionToFault(condition, pattern, test)
+  return fault ? [fault] : []
 }
 
 function estimatedCost(
@@ -105,9 +115,21 @@ function planningPrompt(
   return [
     "You are planning a causal investigation of a flaky Playwright test.",
     "Propose two or three competing, falsifiable hypotheses and exactly three experiments.",
-    "The experiment batch must contain a clean baseline, a network-delay condition, and a",
-    "request-failure condition. Associate each experiment with the hypothesis it tests by",
-    `zero-based hypothesisIndex. Network delay cannot exceed ${maximumDelayMs} ms.`,
+    "The experiment batch must contain a clean baseline and two different interventions chosen",
+    "from network delay, request failure, response truncation, response duplication, and response",
+    "reordering, resource loading delay, startup event delay, a bounded event-loop stall, named",
+    "auth-cookie expiry, delayed visibility of a named local/session-storage entry, a bounded",
+    "wall-clock jump, a BCP 47 locale, an IANA timezone, a bounded viewport, reduced motion,",
+    "animation playback speed between 0.1x and 10x, 2-16 parallel workers, and 2-16",
+    "overlapping copies of the selected test for shared-state interference.",
+    "Reordering holds the first response",
+    "in each adjacent matching request pair. Startup event delay postpones application listeners for",
+    "DOMContentLoaded or load. Resource loading targets document, script, stylesheet, image, or font.",
+    "Never request or include cookie or storage values; only names and keys are allowed.",
+    "Clock jumps change Date wall time without changing monotonic timers.",
+    "Response truncation and duplication cannot alter more than 1024 bytes. Associate each",
+    "experiment with the hypothesis it tests by",
+    `zero-based hypothesisIndex. Network, resource loading, startup event delays, and event-loop stall duration cannot exceed ${maximumDelayMs} ms.`,
     "Do not propose fixes or infer results before experiments run.",
     `Test path: ${test}`,
     "Bounded local source context:",
@@ -190,14 +212,19 @@ function validatePlan(
     throw new Error("Every proposed hypothesis must receive an experiment")
   }
   if (plan.experiments.some((entry) =>
-    entry.condition.kind === "network-delay"
+    (entry.condition.kind === "network-delay" || entry.condition.kind === "resource-loading-delay"
+      || entry.condition.kind === "startup-event-delay"
+      || entry.condition.kind === "storage-state-delay")
     && entry.condition.delayMs > options.maximumDelayMs)) {
-    throw new Error("Model proposed a network delay above the configured maximum")
+    throw new Error("Model proposed a delay above the configured maximum")
+  }
+  if (plan.experiments.some((entry) => entry.condition.kind === "event-loop-stall"
+    && entry.condition.durationMs > options.maximumDelayMs)) {
+    throw new Error("Model proposed an event-loop stall above the configured maximum")
   }
   const kinds = new Set(plan.experiments.map((entry) => entry.condition.kind))
-  const requiredKinds = ["baseline", "network-delay", "request-failure"] as const
-  if (!requiredKinds.every((kind) => kinds.has(kind))) {
-    throw new Error("Investigation plan must distinguish baseline, timing, and request failure")
+  if (!kinds.has("baseline") || kinds.size !== 3) {
+    throw new Error("Investigation plan must contain a baseline and two distinct interventions")
   }
 }
 
@@ -228,7 +255,7 @@ export async function runInvestigation(options: InvestigatorOptions): Promise<In
   const results = await Promise.all(plan.experiments.map(async (experiment) =>
     evaluateExperiment(options.execute, {
       concurrency: options.concurrency,
-      fault: conditionToFault(experiment.condition, options.pattern),
+      faults: conditionToFaults(experiment.condition, options.pattern, options.test),
       minimumFailureRate: options.minimumFailureRate,
       seed: options.seed,
       signal,
@@ -285,7 +312,7 @@ export async function runInvestigation(options: InvestigatorOptions): Promise<In
   if (cost > budget.maxCostUsd()) {
     throw new Error(`Investigation cost $${cost.toFixed(4)} exceeded its configured budget`)
   }
-  return state.ledger.buildReport(options.test, options.modelId, {
+  return state.ledger.buildReport(options.test, options.modelId, sources.map((source) => source.path), {
     inputTokens,
     outputTokens,
     estimatedCostUsd: cost,

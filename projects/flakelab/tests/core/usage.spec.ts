@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test"
 import { ResourceUsageTracker } from "../../src/solari/usage.js"
 
 test("resource accounting reports balanced cleanup and peak concurrency", () => {
-  const tracker = new ResourceUsageTracker()
+  const tracker = new ResourceUsageTracker("cache-key")
   tracker.sandboxCreated()
   tracker.sandboxCreated()
   tracker.browserCreated()
@@ -12,6 +12,7 @@ test("resource accounting reports balanced cleanup and peak concurrency", () => 
   tracker.trialCompleted(firstTrial)
   tracker.trialCompleted(secondTrial)
   tracker.retry()
+  tracker.snapshotCacheMiss("No exact snapshot was available.")
   tracker.browserClosed()
   tracker.sandboxKilled()
   tracker.sandboxKilled()
@@ -23,6 +24,10 @@ test("resource accounting reports balanced cleanup and peak concurrency", () => 
     browserSessionsCreated: 1,
     browserSessionsClosed: 1,
     infrastructureRetries: 1,
-    snapshotCacheHit: false,
+    snapshotCache: {
+      key: "cache-key",
+      reason: "No exact snapshot was available.",
+      status: "miss",
+    },
   })
 })

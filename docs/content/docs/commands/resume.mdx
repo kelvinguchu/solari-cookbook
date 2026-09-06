@@ -1,0 +1,32 @@
+---
+title: resume
+description: Continue a checkpointed diagnosis at the next safe phase.
+---
+
+```bash
+flakelab resume <diagnose.json>
+```
+
+Validates the checkpoint, the original input hash, normalized options, and project-confined
+artifact paths, then starts at the next safe phase.
+
+It does not repeat a completed scan, discovery, or investigation. A completed checkpoint
+prints its summary and performs no work.
+
+```bash
+flakelab resume .flakelab/runs/diagnose.json
+```
+
+## What is persisted
+
+A validated checkpoint is written atomically after every confirmed phase, and on
+interruption or failure. It records:
+
+- the stage and status of the run;
+- planned versus actual trials, wall time, and provider usage;
+- AI tokens and estimated cost;
+- Solari sandboxes created and released;
+- cache decisions with an explicit reason;
+- cleanup status.
+
+A partially completed run remains readable and never masquerades as a completed conclusion.
