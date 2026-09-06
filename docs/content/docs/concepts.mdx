@@ -1,0 +1,71 @@
+---
+title: Concepts
+description: Matched controls, failure signatures, Wilson bounds, minimization, and proof.
+---
+
+These five ideas are what separate "it failed while a fault was applied" from "this fault
+causes this failure".
+
+## Matched controls
+
+FlakeLab never accepts a causal claim from a failing run alone. For each candidate value it
+alternates **control** trials (no fault) and **intervention** trials (fault applied) using
+the same seeds, in the same session, on the same machine. Environmental drift - a slow disk,
+a busy CPU, a warm cache - affects both arms equally.
+
+A fault that reports it never actually applied is discarded rather than counted as evidence.
+
+## Failure signatures
+
+Two failures are only "the same failure" when their normalized signatures match. FlakeLab
+groups failures by signature so that a test which fails for two unrelated reasons is never
+treated as one flake with a 50% rate.
+
+The signature is what discovery confirms, what `replay` verifies, and what the proof matrix
+compares before and after a patch.
+
+## Wilson confidence bounds
+
+Small samples lie. FlakeLab reports 80% Wilson score intervals rather than raw ratios, and
+the acceptance gate is written in terms of those bounds.
+
+A trigger is accepted only when:
+
+- the same signature reaches the requested intervention failure rate;
+- the intervention's 80% Wilson **lower** bound exceeds the matched control's **upper**
+  bound;
+- the fault reports that it actually applied;
+- minimization and independent confirmation preserve the result.
+
+A bounded run that sees no failure does not claim permanent stability. It reports an upper
+confidence bound for the unobserved failure rate - for example, four clean runs bound the
+failure rate below roughly 29%, which is not the same as "stable".
+
+## Minimization
+
+A fault that reproduces at 250 ms is a weak explanation. A fault that reproduces at 61 ms
+and stops reproducing at 60 ms is a boundary, and boundaries are diagnostic.
+
+Discovery searches for the smallest value that still changes the outcome, then saves a
+reproducer with a stability margin above that edge so replay stays reliable. The minimizer
+can also remove irrelevant faults from a composed set.
+
+## Proof
+
+Proof is a matrix, not a single green run. Inside a disposable Solari microVM, FlakeLab runs:
+
+| Arm | Question it answers |
+| --- | --- |
+| Before hostile | Did the trigger actually fail on the unpatched code? |
+| After hostile | Does the patch survive the hostile condition? |
+| Clean control | Does the patch leave normal behavior intact? |
+| Regressions | Do nearby specs still pass? |
+| Typecheck and lint | Is the patch even valid? |
+
+A failed proof is still valuable evidence. It is reported as a rejection, not silently
+discarded and not applied.
+
+<Callout type="warn">
+Bounded proof cannot establish universal correctness. It establishes that a specific
+candidate removed a specific reproducible trigger without breaking a specific set of checks.
+</Callout>

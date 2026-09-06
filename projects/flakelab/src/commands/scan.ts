@@ -1,109 +1,122 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 
-import type { ExperimentResult } from "../discovery/evaluate.js"
-import { evaluateExperiment } from "../discovery/evaluate.js"
-import { createPlaywrightExecutor } from "../runner/playwright-executor.js"
+import { portableProjectPath } from "../artifacts/paths.js"
+import { failureConfidence, runNativePlaywrightScan } from "../runner/native-scan.js"
+import type {
+  ScanArtifact,
+  ScanCounts,
+  ScanStatus,
+  ScanTestResult,
+  ScanTotals,
+} from "../scan/schema.js"
+import { scanArtifactSchema } from "../scan/schema.js"
 import { ProgressReporter } from "../ui/progress.js"
-import type { CliValues } from "./options.js"
+import { formatCount } from "../ui/format.js"
+import { writeStdout } from "../ui/console.js"
+import { stdoutTheme } from "../ui/theme.js"
+import { formatScanOutput } from "./scan-summary.js"
+import type { ScanOptions } from "./options.js"
 import { integerOption, withInterruption } from "./options.js"
 
-export type ScanStatus =
-  | "consistent-failure"
-  | "flaky"
-  | "inconclusive"
-  | "no-failure-observed"
+export type { ScanStatus } from "../scan/schema.js"
+export type ScanResult = ScanArtifact
 
-export interface ScanResult {
-  artifactPath: string
-  result: ExperimentResult
-  status: ScanStatus
-  target: string
+export {
+  failureEvidence,
+  finding,
+  formatScanOutput,
+  formatScanSummary,
+} from "./scan-summary.js"
+
+const SCAN_EXIT_CODES: Record<ScanStatus, 0 | 1 | 2> = {
+  "failed-every-run": 1,
+  inconclusive: 2,
+  "mixed-outcomes": 1,
+  "no-failure-observed": 0,
 }
 
-export function classifyScan(result: ExperimentResult): ScanStatus {
-  if (result.errors > 0) {
+function sumCounts(tests: ScanTestResult[]): ScanCounts {
+  return tests.reduce<ScanCounts>((total, test) => ({
+    errors: total.errors + test.counts.errors,
+    failed: total.failed + test.counts.failed,
+    passed: total.passed + test.counts.passed,
+    skipped: total.skipped + test.counts.skipped,
+  }), { errors: 0, failed: 0, passed: 0, skipped: 0 })
+}
+
+export function classifyScan(tests: ScanTestResult[], runnerErrors: string[]): ScanStatus {
+  if (runnerErrors.length > 0 || tests.length === 0 || tests.every((test) => test.status === "skipped")) {
     return "inconclusive"
   }
-  if (result.failed === 0) {
-    return "no-failure-observed"
+  if (tests.some((test) => test.status === "errored")) {
+    return "inconclusive"
   }
-  if (result.passed === 0) {
-    return "consistent-failure"
+  if (tests.some((test) => test.status === "mixed-outcomes")) {
+    return "mixed-outcomes"
   }
-  return "flaky"
+  if (tests.some((test) => test.status === "failed-every-run")) {
+    return "failed-every-run"
+  }
+  return "no-failure-observed"
 }
 
-function percentage(value: number): string {
-  return `${Math.round(value * 100)}%`
+export function scanExitCode(status: ScanStatus): 0 | 1 | 2 {
+  return SCAN_EXIT_CODES[status]
 }
 
-function finding(status: ScanStatus): string {
-  const findings: Record<ScanStatus, string> = {
-    "consistent-failure": "The target failed consistently; this looks like a regular test failure.",
-    flaky: "Flaky behavior observed: the same target both passed and failed.",
-    inconclusive: "The scan was inconclusive because one or more test processes could not run.",
-    "no-failure-observed": "No failure was observed in this bounded scan.",
+export function summarizeScanTests(tests: ScanTestResult[]): ScanTotals {
+  const counts = sumCounts(tests)
+  const measuredTrials = counts.passed + counts.failed
+  return {
+    ...counts,
+    executions: measuredTrials + counts.skipped + counts.errors,
+    failureRate: measuredTrials === 0 ? 0 : counts.failed / measuredTrials,
+    lowerBound80: failureConfidence(counts.failed, measuredTrials).lowerBound80,
+    upperBound80: failureConfidence(counts.failed, measuredTrials).upperBound80,
   }
-  return findings[status]
 }
 
-export function formatScanSummary(scan: ScanResult): string {
-  const lines = [
-    "",
-    "FlakeLab stability scan",
-    `  Target       ${scan.target}`,
-    `  Runs         ${scan.result.trials}`,
-    `  Passed       ${scan.result.passed}`,
-    `  Failed       ${scan.result.failed}`,
-    `  Failure rate ${percentage(scan.result.failureRate)}`,
-    "",
-    finding(scan.status),
-  ]
-  if (scan.result.dominantFailureReason) {
-    const reason = scan.result.dominantFailureReason
-      .split("\n")
-      .map((line) => `  ${line}`)
-    lines.push("", "Most common failure", ...reason)
-  }
-  lines.push("", `Evidence saved to ${scan.artifactPath}`)
-  if (scan.status === "no-failure-observed") {
-    lines.push("Run again with --runs 20 for a stronger scan.")
-  }
-  return lines.join("\n")
-}
-
-export async function scan(target: string, values: CliValues): Promise<ScanResult> {
+export async function scan(target: string, values: ScanOptions): Promise<ScanResult> {
   const projectRoot = process.cwd()
   const artifactPath = resolve(projectRoot, values.artifacts, "scan.json")
+  const portableArtifactPath = portableProjectPath(projectRoot, artifactPath)
   const progress = new ProgressReporter()
   const runs = integerOption(values.runs, "runs")
-  progress.start(`Running ${runs} isolated Playwright repetitions`)
-  const result = await withInterruption(async (signal) => evaluateExperiment(
-    createPlaywrightExecutor(projectRoot, target, { signal }),
+  const workers = integerOption(values.concurrency, "concurrency")
+  progress.start(
+    "stability scan",
+    `${formatCount(runs, "native Playwright run")} · ${formatCount(workers, "worker")}`,
+  )
+  const nativeResult = await withInterruption(async (signal) => runNativePlaywrightScan(
+    projectRoot,
+    target,
     {
-      concurrency: integerOption(values.concurrency, "concurrency"),
-      minimumFailureRate: 0.5,
-      seed: integerOption(values.seed, "seed"),
+      artifactDirectory: values.artifacts,
+      runs,
       signal,
-      trials: runs,
+      workers,
     },
   ))
-  progress.done(`${result.passed} passed · ${result.failed} failed · ${result.errors} errors`)
-  const scanResult: ScanResult = {
-    artifactPath,
-    result,
-    status: classifyScan(result),
-    target,
-  }
+  const status = classifyScan(nativeResult.tests, nativeResult.runnerErrors)
+  progress.done(
+    `${status} · ${formatCount(nativeResult.tests.length, "test")} classified`
+    + ` · ${formatCount(nativeResult.runnerErrors.length, "runner error")}`,
+  )
+  const scanResult = scanArtifactSchema.parse({
+    generatedAt: new Date().toISOString(),
+    playwrightOutputDirectory: nativeResult.playwrightOutputDirectory,
+    runs,
+    runnerErrors: nativeResult.runnerErrors,
+    status,
+    target: portableProjectPath(projectRoot, target),
+    tests: nativeResult.tests,
+    totals: summarizeScanTests(nativeResult.tests),
+    workers,
+  })
   await mkdir(dirname(artifactPath), { recursive: true })
   await writeFile(artifactPath, `${JSON.stringify(scanResult, null, 2)}\n`, "utf8")
-  process.stdout.write(`${formatScanSummary(scanResult)}\n`)
-  if (values.verbose) {
-    process.stdout.write(`\n${JSON.stringify(scanResult, null, 2)}\n`)
-  }
-  if (scanResult.status !== "no-failure-observed") {
-    process.exitCode = 1
-  }
+  writeStdout(formatScanOutput(scanResult, values, portableArtifactPath, stdoutTheme()))
+  process.exitCode = scanExitCode(scanResult.status)
   return scanResult
 }

@@ -1,0 +1,35 @@
+---
+title: Comparisons
+description: What FlakeLab complements, and what it does not replace.
+---
+
+These products solve adjacent problems. The most useful setup may well combine them.
+
+| Approach | Primary strength | Difference from FlakeLab |
+| --- | --- | --- |
+| Playwright retries and Trace Viewer | Retry failed tests and inspect actions, DOM snapshots, network, console, and attachments from a run. | FlakeLab builds on Playwright and adds paired fault experiments, trigger minimization, statistical causal gates, constrained repair, and isolated proof. |
+| Currents | Hosted Playwright orchestration, run history, flaky-test views, trace access, and CI optimization. | FlakeLab is a local-first causal investigation and proof tool, not a hosted run-history or orchestration dashboard. |
+| BuildPulse | Detect and rank flaky tests from uploaded JUnit history, report impact, integrate with CI, and quarantine tests. | FlakeLab can start from one test without historical telemetry and actively searches for a reproducible cause; it does not provide organization-wide trend management. |
+| Trunk Flaky Tests | Organization-wide detection, tracking, quarantine, PR summaries, and ticket workflows across frameworks. | FlakeLab is Playwright-specific and fix-oriented; it does not replace fleet-level ownership and quarantine workflows. |
+| Datadog Test Optimization | Correlate flaky tests with CI, manage active/quarantined/disabled/fixed states, automate policy, and measure time lost. | FlakeLab does not provide observability or lifecycle management; it focuses on controlled reproduction and proof before a human accepts a patch. |
+| BrowserStack Test Reporting and Analytics | Cross-browser and device execution plus historical smart tags, trends, and failure analysis. | FlakeLab is not a device cloud. Its remote use is isolated Solari proof of a bounded candidate and statistical revision execution. |
+| General chaos engineering | Stress services, infrastructure, dependencies, and production-like systems. | FlakeLab faults are narrow, deterministic, reversible, and attached to one Playwright test with matched controls. |
+
+## The short version
+
+- Use **Playwright** to author and run the tests.
+- Use **CI observability** when you need fleet-wide detection, ownership, trends, and
+  quarantine.
+- Use a **browser or device cloud** when compatibility coverage is the question.
+- Use **FlakeLab** when the question is: *what controlled condition causes this exact flake,
+  and does this narrow fix survive proof?*
+
+## Official references
+
+- [Playwright retries](https://playwright.dev/docs/test-retries) and
+  [Trace Viewer](https://playwright.dev/docs/trace-viewer-intro)
+- [Currents flaky tests](https://docs.currents.dev/dashboard/tests/flaky-tests)
+- [BuildPulse flaky tests](https://docs.buildpulse.io/flaky-tests/overview)
+- [Trunk Flaky Tests](https://docs.trunk.io/flaky-tests/overview)
+- [Datadog Flaky Tests Management](https://docs.datadoghq.com/tests/flaky_management/)
+- [BrowserStack Smart Tags](https://www.browserstack.com/docs/test-reporting-and-analytics/features/smart-tags)

@@ -1,0 +1,36 @@
+---
+title: analyze
+description: Triage an existing Playwright blob report without rerunning any test.
+---
+
+```bash
+flakelab analyze <blob-report> [options]
+```
+
+Reads a Playwright blob-report ZIP or a directory of shard archives. It validates archive
+structure and bounds, merges through Playwright's own report merger, preserves the source
+archives, ranks failure signatures, and retains referenced traces, screenshots, and videos.
+
+This command consumes no provider credits and reruns nothing, which makes it the right first
+move for a failure that already happened in CI.
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--artifacts <dir>` | `.flakelab/runs` | Evidence directory. |
+| `--baseline <artifact>` | none | Rank signatures absent from an earlier analysis artifact. |
+| `--json` | off | Emit only artifact JSON on stdout. |
+| `--verbose` | off | Include artifact JSON after the summary. |
+
+## Example
+
+```bash
+flakelab analyze ./blob-report --baseline previous.json --json
+```
+
+## Safety
+
+Archive extraction is path-confined and rejects traversal, links, malformed archives, and
+unreasonable expanded sizes. Shards and environments are merged without collapsing distinct
+test identities.

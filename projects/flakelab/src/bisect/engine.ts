@@ -123,7 +123,6 @@ export async function statisticalBisect(options: BisectOptions): Promise<BisectR
     .sort((left, right) => left[0] - right[0])
     .map((entry) => entry[1])
   return bisectReportSchema.parse({
-    version: 1,
     goodRevision: options.revisions[0],
     badRevision: options.revisions[lastIndex],
     firstFailingCommit: exact ? options.revisions[badIndex] : null,

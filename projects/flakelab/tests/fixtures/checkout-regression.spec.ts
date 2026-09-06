@@ -1,4 +1,4 @@
-import { expect, test } from "../../src/playwright.js"
+import { expect, test } from "@playwright/test"
 import type { CheckoutServer } from "../support/checkout-server.js"
 import { startCheckoutServer } from "../support/checkout-server.js"
 

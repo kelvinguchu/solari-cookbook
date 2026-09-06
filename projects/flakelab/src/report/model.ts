@@ -21,14 +21,133 @@ interface BuildReportOptions {
   reproducer: Reproducer
 }
 
-function conditionLabel(condition: ExperimentCondition): string {
-  if (condition.kind === "baseline") {
-    return "Clean baseline"
+function safeReportPath(path: string): string {
+  const normalized = path.replaceAll("\\", "/")
+  const segments = normalized.split("/")
+  if (!normalized || normalized.startsWith("/") || /^[a-z]:/iu.test(normalized)
+    || /^[a-z][a-z\d+.-]*:/iu.test(normalized) || segments.includes("..")
+    || /[\0\r\n]/u.test(normalized)) {
+    throw new Error("Evidence links must be safe project-relative paths")
+  }
+  return redactText(normalized)
+}
+
+type StateCondition = Extract<ExperimentCondition, {
+  kind: "auth-cookie-expiry" | "storage-state-delay"
+}>
+type TemporalCondition = Extract<ExperimentCondition, {
+  kind: "clock-jump" | "locale" | "timezone"
+}>
+type TimingCondition = Extract<ExperimentCondition, {
+  kind: "event-loop-stall" | "network-delay" | "resource-loading-delay" | "startup-event-delay"
+}>
+type VisualCondition = Extract<ExperimentCondition, {
+  kind: "animation-speed" | "reduced-motion" | "viewport"
+}>
+type RunnerCondition = Extract<ExperimentCondition, {
+  kind: "shared-state-interference" | "worker-pressure"
+}>
+
+function isStateCondition(condition: ExperimentCondition): condition is StateCondition {
+  return condition.kind === "auth-cookie-expiry" || condition.kind === "storage-state-delay"
+}
+
+function stateConditionLabel(condition: StateCondition): string {
+  if (condition.kind === "auth-cookie-expiry") {
+    return `Cookie ${condition.cookieName} withheld`
+  }
+  return `${condition.storage} key ${condition.key} hidden for ${condition.delayMs} ms`
+}
+
+function isTemporalCondition(condition: ExperimentCondition): condition is TemporalCondition {
+  return condition.kind === "clock-jump"
+    || condition.kind === "locale"
+    || condition.kind === "timezone"
+}
+
+function temporalConditionLabel(condition: TemporalCondition): string {
+  if (condition.kind === "clock-jump") {
+    return `Clock shifted ${condition.offsetMs} ms after ${condition.jumpAfterMs} ms`
+  }
+  return condition.kind === "locale"
+    ? `Locale set to ${condition.locale}`
+    : `Timezone set to ${condition.timezoneId}`
+}
+
+function isTimingCondition(condition: ExperimentCondition): condition is TimingCondition {
+  return condition.kind === "event-loop-stall"
+    || condition.kind === "network-delay"
+    || condition.kind === "resource-loading-delay"
+    || condition.kind === "startup-event-delay"
+}
+
+function timingConditionLabel(condition: TimingCondition): string {
+  if (condition.kind === "event-loop-stall") {
+    return `Event loop stalled ${condition.durationMs} ms after ${condition.startAfterMs} ms`
   }
   if (condition.kind === "network-delay") {
     return `Network delayed by ${condition.delayMs} ms`
   }
-  return `HTTP ${condition.statusCode} response injected`
+  return condition.kind === "resource-loading-delay"
+    ? `${condition.resourceType} loading delayed by ${condition.delayMs} ms`
+    : `${condition.event} listeners delayed by ${condition.delayMs} ms`
+}
+
+function isVisualCondition(condition: ExperimentCondition): condition is VisualCondition {
+  return condition.kind === "animation-speed"
+    || condition.kind === "reduced-motion"
+    || condition.kind === "viewport"
+}
+
+function visualConditionLabel(condition: VisualCondition): string {
+  if (condition.kind === "animation-speed") {
+    return `Animation speed set to ${condition.rate}x`
+  }
+  return condition.kind === "reduced-motion"
+    ? "Reduced motion enabled"
+    : `Viewport set to ${condition.width}x${condition.height}`
+}
+
+function runnerConditionLabel(condition: RunnerCondition): string {
+  return condition.kind === "worker-pressure"
+    ? `Worker pressure set to ${condition.workers} parallel workers`
+    : `Shared-state interference from ${condition.copies} overlapping copies`
+}
+
+function responseConditionLabel(condition: Extract<ExperimentCondition, {
+  kind: "response-duplication" | "response-reordering" | "response-truncation"
+}>): string {
+  if (condition.kind === "response-duplication") {
+    return `Response tail duplicated by ${condition.duplicateBytes} bytes`
+  }
+  return condition.kind === "response-reordering"
+    ? `First response in each pair held by ${condition.holdMs} ms`
+    : `Response truncated by ${condition.removeBytes} bytes`
+}
+
+function conditionLabel(condition: ExperimentCondition): string {
+  if (condition.kind === "baseline") {
+    return "Clean baseline"
+  }
+  if (isStateCondition(condition)) {
+    return stateConditionLabel(condition)
+  }
+  if (isTemporalCondition(condition)) {
+    return temporalConditionLabel(condition)
+  }
+  if (isTimingCondition(condition)) {
+    return timingConditionLabel(condition)
+  }
+  if (isVisualCondition(condition)) {
+    return visualConditionLabel(condition)
+  }
+  if (condition.kind === "worker-pressure" || condition.kind === "shared-state-interference") {
+    return runnerConditionLabel(condition)
+  }
+  if (condition.kind === "request-failure") {
+    return `HTTP ${condition.statusCode} response injected`
+  }
+  return responseConditionLabel(condition)
 }
 
 function cleanResult(result: {
@@ -59,7 +178,6 @@ function cleanResult(result: {
 export function buildEvidenceReport(options: BuildReportOptions): EvidenceReport {
   const { investigation, proof, reproducer } = options
   const ownership = classifyFailure(investigation)
-  const trigger = reproducer.faults[0]
   const matrix = [
     { label: "Before · hostile", result: cleanResult(proof.beforeHostile) },
     { label: "After · hostile", result: cleanResult(proof.afterHostile) },
@@ -69,21 +187,38 @@ export function buildEvidenceReport(options: BuildReportOptions): EvidenceReport
       result: cleanResult(regression.result),
     })),
   ]
+  const controlExperimentIds = investigation.experiments
+    .filter((experiment) => experiment.condition.kind === "baseline")
+    .map((experiment) => experiment.id)
+  const interventionExperimentIds = investigation.experiments
+    .filter((experiment) => investigation.conclusionEvidenceIds.includes(experiment.id)
+      && experiment.condition.kind !== "baseline")
+    .map((experiment) => experiment.id)
+  if (controlExperimentIds.length === 0) {
+    throw new Error("Evidence report requires a clean control experiment")
+  }
+  if (interventionExperimentIds.length === 0) {
+    throw new Error("Evidence report requires a cited intervention experiment")
+  }
   return evidenceReportSchema.parse({
-    version: 1,
     generatedAt: (options.generatedAt ?? new Date()).toISOString(),
     status: proof.patchAccepted ? "FIX_PROVEN" : "PATCH_REJECTED",
     test: redactText(investigation.test),
     model: redactText(investigation.model),
     conclusion: redactText(investigation.conclusion),
+    causalClaim: {
+      controlExperimentIds,
+      interventionExperimentIds,
+    },
     ownership: {
       ...ownership,
       rationale: redactText(ownership.rationale),
     },
     trigger: {
-      kind: trigger.kind,
-      pattern: redactText(trigger.pattern),
-      delayMs: trigger.delayMs,
+      faults: reproducer.faults.map((fault) => ({
+        ...fault,
+        pattern: redactText(fault.pattern),
+      })),
       minimumFailureRate: reproducer.expectedFailure.minimumRate,
       signature: reproducer.expectedFailure.signature,
     },
@@ -98,7 +233,20 @@ export function buildEvidenceReport(options: BuildReportOptions): EvidenceReport
       id: experiment.id,
       hypothesisId: experiment.hypothesisId,
       condition: conditionLabel(experiment.condition),
+      representativeRuns: experiment.result.representativeRuns.map((run) => ({
+        ...run,
+        artifacts: run.artifacts.map((artifact) => ({
+          ...artifact,
+          path: safeReportPath(artifact.path),
+        })),
+      })),
       result: cleanResult(experiment.result),
+    })),
+    replayCommand: `flakelab replay ${JSON.stringify(options.paths.reproducer)} --concurrency 1`,
+    sourcePaths: investigation.sourcePaths.map(safeReportPath),
+    sourceLocations: proof.sourceLocations.map((location) => ({
+      line: location.line,
+      path: safeReportPath(location.path),
     })),
     proof: {
       accepted: proof.patchAccepted,
@@ -108,10 +256,10 @@ export function buildEvidenceReport(options: BuildReportOptions): EvidenceReport
     },
     usage: investigation.usage,
     artifacts: [
-      { label: "Investigation", path: redactText(options.paths.investigation) },
-      { label: "Reproducer", path: redactText(options.paths.reproducer) },
-      { label: "Candidate patch", path: redactText(options.paths.patch) },
-      { label: "Proof of fix", path: redactText(options.paths.proof) },
+      { label: "Investigation", path: safeReportPath(options.paths.investigation) },
+      { label: "Reproducer", path: safeReportPath(options.paths.reproducer) },
+      { label: "Candidate patch", path: safeReportPath(options.paths.patch) },
+      { label: "Proof of fix", path: safeReportPath(options.paths.proof) },
     ],
   })
 }

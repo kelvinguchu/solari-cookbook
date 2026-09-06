@@ -8,6 +8,11 @@ These instructions apply to the entire repository. Keep implementation work focu
 - Keep FlakeLab fast, simple, secure, and useful to working developers.
 - Prefer the smallest design that solves the current problem. Do not add abstractions,
   services, dependencies, or configuration for hypothetical needs.
+- Keep one current schema for new or unreleased internal artifacts. Do not add schema
+  versions, migrations, compatibility aliases, or parallel legacy shapes unless released
+  consumers or persisted user data create a demonstrated compatibility requirement. When
+  the design changes during early development, update the code, tests, and documentation
+  directly and remove the obsolete shape.
 - Keep modules cohesive and public APIs narrow. Use guard clauses and named helpers instead
   of deeply nested control flow.
 - Preserve deterministic behavior: explicit seeds, bounded retries, stable artifacts, and
@@ -43,6 +48,10 @@ These instructions apply to the entire repository. Keep implementation work focu
 - No human-authored source, test, or configuration file may exceed 500 lines.
   Split the file by responsibility before it reaches the limit. Generated files, lockfiles,
   vendored code, and build artifacts are exempt.
+- Stylesheets are exempt from the 500-line limit. A single stylesheet keeps the cascade,
+  custom-property tokens, and media queries in one readable place, and splitting one across
+  files trades a real loss of clarity for an arbitrary line count. Keep stylesheets organized
+  by labelled section instead.
 - Do not use blanket ESLint disables. Any suppression must be local, minimal, and explain why
   the rule is inapplicable.
 

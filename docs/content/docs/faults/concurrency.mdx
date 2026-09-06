@@ -1,0 +1,46 @@
+---
+title: Concurrency
+description: Worker parallelism and shared-state interference between overlapping tests.
+---
+
+These are runner-level faults. They never pretend to be browser or network mutations.
+
+## `worker-pressure`
+
+Finds the smallest supported Playwright worker count that exposes a failure. This is the
+right tool when a suite passes serially and fails in CI.
+
+```bash
+flakelab discover tests/parallel.spec.ts \
+  --fault worker-pressure \
+  --max-workers 6
+```
+
+## `shared-state-interference`
+
+Overlaps repeated copies of the selected target to expose unsafe shared accounts, records,
+files, ports, or other cross-test resources.
+
+```bash
+flakelab discover tests/account.spec.ts \
+  --fault shared-state-interference \
+  --max-copies 5
+```
+
+Discovery finds the minimum number of overlapping copies that triggers the collision.
+
+## Bounds
+
+Worker and copy counts are bounded at 16, and each result receives an independent 12-trial
+confirmation before it is accepted.
+
+| Option | Applies to | Default |
+| --- | --- | --- |
+| `--max-workers <n>` | `worker-pressure` | `4` |
+| `--max-copies <n>` | `shared-state-interference` | `4` |
+
+<Callout type="info">
+This is why `--concurrency` defaults to `1` everywhere else. Raising concurrency during an
+unrelated experiment confounds it; these two families investigate concurrency deliberately,
+with matched controls.
+</Callout>

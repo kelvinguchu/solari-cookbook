@@ -1,0 +1,44 @@
+---
+title: report
+description: Bundle validated evidence into one portable, offline HTML report.
+---
+
+```bash
+flakelab report <investigation> [options]
+```
+
+Validates and redacts the investigation and optional evidence, then bundles the React report
+client, the data, and a restrictive content security policy into one offline HTML file.
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--reproducer <path>` | `flakelab.repro.yaml` | Minimized reproducer. |
+| `--patch <path>` | `candidate.diff` | Candidate diff. |
+| `--proof <path>` | `flakelab.proof.json` | Proof matrix. |
+| `--html <path>` | `flakelab.report.html` | Output file. |
+| `--open` | off | Open without asking after generation. |
+| `--publish` | off | Ask for confirmation, then publish a temporary redacted Solari preview. |
+| `--prompt-credentials` | off | Re-enter a required Solari key through hidden input. |
+
+## What the report contains
+
+The report is a forensic document, ordered as a debugging story:
+
+1. **Verdict** - fix proven or candidate rejected, test path, ownership, confidence.
+2. **Reproduction** - the minimal hostile trigger, route pattern, delay, threshold.
+3. **Evidence summary** - experiments, confirmed causes, model cost, proof environment.
+4. **Experiment record** - the ordered timeline with pass/fail counts and confidence floors.
+5. **Competing hypotheses** - confirmed, rejected, and still-proposed explanations.
+6. **Proof of repair** - before/after hostile, clean control, regressions, static checks.
+7. **Reproducible artifacts** - the paths that back every claim.
+
+It is a single file. It works from a `file://` URL, makes zero runtime network requests,
+embeds its own fonts, and retains a restrictive content security policy.
+
+## Publication
+
+`--publish` is never automatic. It asks for confirmation immediately before uploading,
+publishes only the redacted report through a signed Solari preview, and destroys the hosting
+sandbox after at most 60 minutes.

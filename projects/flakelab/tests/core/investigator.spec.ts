@@ -2,15 +2,19 @@ import { expect, test } from "@playwright/test"
 
 import { InvestigationBudget } from "../../src/investigator/budget.js"
 import { InvestigationLedger } from "../../src/investigator/ledger.js"
+import { experimentConditionSchema } from "../../src/investigator/schema.js"
 
 const passingResult = {
   confirmed: false,
   errors: 0,
   failed: 0,
   failureRate: 0,
+  failureSignatures: [],
   lowerBound80: 0,
   passed: 4,
+  representativeRuns: [],
   trials: 4,
+  upperBound80: 0.2911,
 }
 
 const failingResult = {
@@ -19,9 +23,31 @@ const failingResult = {
   errors: 0,
   failed: 4,
   failureRate: 1,
+  failureSignatures: [{
+    failures: 4,
+    failureRate: 1,
+    lowerBound80: 0.7089,
+    signature: "checkout-timeout",
+    upperBound80: 1,
+  }],
   lowerBound80: 0.7089,
   passed: 0,
+  representativeRuns: [],
   trials: 4,
+  upperBound80: 1,
+}
+
+const erroredResult = {
+  confirmed: false,
+  errors: 4,
+  failed: 0,
+  failureRate: 0,
+  failureSignatures: [],
+  lowerBound80: 0,
+  passed: 0,
+  representativeRuns: [],
+  trials: 4,
+  upperBound80: 0,
 }
 
 test("ledger accepts only an evidence-grounded causal conclusion", () => {
@@ -54,7 +80,10 @@ test("ledger accepts only an evidence-grounded causal conclusion", () => {
     [timingEvidence.id],
   )
 
-  const report = ledger.buildReport("tests/checkout.spec.ts", "test-model", {
+  const report = ledger.buildReport("tests/checkout.spec.ts", "test-model", [
+    "tests/checkout.spec.ts",
+    "src/checkout.ts",
+  ], {
     inputTokens: 100,
     outputTokens: 50,
     estimatedCostUsd: 0.001,
@@ -80,6 +109,53 @@ test("ledger rejects confirmation without a causal intervention", () => {
   )).toThrow(/Confirmation requires/u)
 })
 
+test("ledger requires confidence separation from the baseline", () => {
+  const ledger = new InvestigationLedger()
+  const hypothesis = ledger.propose(
+    "Checkout has a timing race",
+    "Network delay will cause the assertion to fail",
+  )
+  ledger.addExperiment(hypothesis.id, { kind: "baseline" }, {
+    ...passingResult,
+    failed: 2,
+    failureRate: 0.5,
+    passed: 2,
+    upperBound80: 0.78,
+  })
+  const intervention = ledger.addExperiment(
+    hypothesis.id,
+    { delayMs: 125, kind: "network-delay" },
+    { ...failingResult, lowerBound80: 0.71 },
+  )
+
+  expect(() => ledger.assess(
+    hypothesis.id,
+    "confirmed",
+    [intervention.id],
+    "The rates overlap too much to establish a causal increase",
+  )).toThrow(/Confirmation requires/u)
+})
+
+test("ledger never treats runner errors as hypothesis evidence", () => {
+  const ledger = new InvestigationLedger()
+  const hypothesis = ledger.propose(
+    "Checkout has an event loop race",
+    "An event loop stall will cause the assertion to fail",
+  )
+  const evidence = ledger.addExperiment(
+    hypothesis.id,
+    { durationMs: 500, kind: "event-loop-stall", startAfterMs: 0 },
+    erroredResult,
+  )
+
+  expect(() => ledger.assess(
+    hypothesis.id,
+    "rejected",
+    [evidence.id],
+    "The intervention did not confirm the prediction",
+  )).toThrow(/inconclusive/u)
+})
+
 test("experiment budget prevents unbounded model-selected work", () => {
   const budget = new InvestigationBudget({
     maxCostUsd: 0.25,
@@ -92,4 +168,106 @@ test("experiment budget prevents unbounded model-selected work", () => {
   expect(() => {
     budget.reserveExperiment(4)
   }).toThrow(/experiment budget exhausted/u)
+})
+
+test("investigator conditions validate bounded value-free faults", () => {
+  expect(experimentConditionSchema.parse({
+    kind: "auth-cookie-expiry",
+    cookieName: "session-id",
+  })).toEqual({ kind: "auth-cookie-expiry", cookieName: "session-id" })
+  expect(experimentConditionSchema.safeParse({
+    kind: "auth-cookie-expiry",
+    cookieName: "cookie with value=secret",
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "clock-jump",
+    jumpAfterMs: 25,
+    offsetMs: -3_600_000,
+  })).toEqual({ kind: "clock-jump", jumpAfterMs: 25, offsetMs: -3_600_000 })
+  expect(experimentConditionSchema.safeParse({
+    kind: "clock-jump",
+    jumpAfterMs: 25,
+    offsetMs: 0,
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({ kind: "locale", locale: "fr-FR" }))
+    .toEqual({ kind: "locale", locale: "fr-FR" })
+  expect(experimentConditionSchema.parse({
+    kind: "timezone",
+    timezoneId: "America/New_York",
+  })).toEqual({ kind: "timezone", timezoneId: "America/New_York" })
+  expect(experimentConditionSchema.parse({ kind: "animation-speed", rate: 5 }))
+    .toEqual({ kind: "animation-speed", rate: 5 })
+  expect(experimentConditionSchema.parse({ kind: "reduced-motion" }))
+    .toEqual({ kind: "reduced-motion" })
+  expect(experimentConditionSchema.parse({ kind: "viewport", width: 375, height: 667 }))
+    .toEqual({ kind: "viewport", width: 375, height: 667 })
+  expect(experimentConditionSchema.parse({ kind: "worker-pressure", workers: 4 }))
+    .toEqual({ kind: "worker-pressure", workers: 4 })
+  expect(experimentConditionSchema.parse({ kind: "shared-state-interference", copies: 3 }))
+    .toEqual({ kind: "shared-state-interference", copies: 3 })
+  expect(experimentConditionSchema.parse({
+    kind: "event-loop-stall",
+    durationMs: 500,
+    startAfterMs: 0,
+  })).toEqual({ kind: "event-loop-stall", durationMs: 500, startAfterMs: 0 })
+  expect(experimentConditionSchema.safeParse({
+    kind: "event-loop-stall",
+    durationMs: 2_001,
+    startAfterMs: 0,
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "response-truncation",
+    removeBytes: 1_024,
+  })).toEqual({ kind: "response-truncation", removeBytes: 1_024 })
+  expect(experimentConditionSchema.safeParse({
+    kind: "response-truncation",
+    removeBytes: 1_025,
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "response-duplication",
+    duplicateBytes: 1_024,
+  })).toEqual({ kind: "response-duplication", duplicateBytes: 1_024 })
+  expect(experimentConditionSchema.safeParse({
+    kind: "response-duplication",
+    duplicateBytes: 1_025,
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "response-reordering",
+    holdMs: 30_000,
+  })).toEqual({ kind: "response-reordering", holdMs: 30_000 })
+  expect(experimentConditionSchema.safeParse({
+    kind: "response-reordering",
+    holdMs: 30_001,
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "resource-loading-delay",
+    delayMs: 100,
+    resourceType: "script",
+  })).toEqual({ kind: "resource-loading-delay", delayMs: 100, resourceType: "script" })
+  expect(experimentConditionSchema.safeParse({
+    kind: "resource-loading-delay",
+    delayMs: 100,
+    resourceType: "fetch",
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "startup-event-delay",
+    delayMs: 100,
+    event: "dom-content-loaded",
+  })).toEqual({ kind: "startup-event-delay", delayMs: 100, event: "dom-content-loaded" })
+  expect(experimentConditionSchema.safeParse({
+    kind: "startup-event-delay",
+    delayMs: 100,
+    event: "ready",
+  }).success).toBe(false)
+  expect(experimentConditionSchema.parse({
+    kind: "storage-state-delay",
+    delayMs: 100,
+    key: "auth-state",
+    storage: "local-storage",
+  })).toEqual({
+    kind: "storage-state-delay",
+    delayMs: 100,
+    key: "auth-state",
+    storage: "local-storage",
+  })
 })

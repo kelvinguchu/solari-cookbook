@@ -17,3 +17,4 @@ projects/flakelab/flakelab.proof.json
 projects/flakelab/flakelab.report.html
 projects/flakelab/flakelab.repro.discovery.json
 projects/flakelab/flakelab.repro.yaml
+projects/flakelab/.flakelab-*.config.ts

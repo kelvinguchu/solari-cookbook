@@ -8,7 +8,12 @@ import { z } from "zod"
 import { createHash } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import type { TrialOutcome, TrialPlan } from "../domain/schema.js"
-import { installFault } from "../faults/install.js"
+import { installFaults } from "../faults/install.js"
+import {
+  normalizeProviderError,
+  ProviderFailure,
+  solariResponseFailure,
+} from "../providers/errors.js"
 import type { TrialExecutor } from "../runner/playwright-executor.js"
 import {
   CHECKOUT_APP_DIRECTORY,
@@ -20,7 +25,11 @@ import type { ResourceUsage } from "./usage.js"
 import { ResourceUsageTracker } from "./usage.js"
 import { SecureWebSocketProxy } from "./websocket-proxy.js"
 
-const SANDBOX_TIMEOUT_MS = 5 * 60_000
+export const SOLARI_SANDBOX_TEMPLATE = "base"
+export const SOLARI_SANDBOX_TIMEOUT_MS = 5 * 60_000
+export const CHECKOUT_START_SHELL = "sh"
+export const CHECKOUT_START_COMMAND =
+  `cd ${CHECKOUT_APP_DIRECTORY} && nohup python3 server.py >server.log 2>&1 &`
 const PREVIEW_ATTEMPTS = 20
 
 interface RemoteBrowser {
@@ -38,7 +47,7 @@ export interface SolariExecutorOptions {
   apiKey: string
   baseUrl: string
   signal?: AbortSignal
-  snapshotName: string
+  snapshotKey: string
 }
 
 function fingerprint(value: string): string {
@@ -71,7 +80,7 @@ export class SolariParallelExecutor {
   readonly #browsers: Solari
   readonly #options: SolariExecutorOptions
   readonly #sandboxes: SandboxClient
-  readonly #tracker = new ResourceUsageTracker()
+  readonly #tracker: ResourceUsageTracker
   readonly #liveBrowsers = new Map<string, RemoteBrowser>()
   readonly #liveSandboxes = new Map<string, Sandbox>()
   #previewUrl: string | undefined
@@ -79,6 +88,7 @@ export class SolariParallelExecutor {
 
   constructor(options: SolariExecutorOptions) {
     this.#options = options
+    this.#tracker = new ResourceUsageTracker(options.snapshotKey)
     this.#sandboxes = new SandboxClient({ apiKey: options.apiKey, baseUrl: options.baseUrl })
     this.#browsers = new Solari({ apiKey: options.apiKey, baseUrl: options.baseUrl })
   }
@@ -86,38 +96,44 @@ export class SolariParallelExecutor {
   async prepare(): Promise<void> {
     this.#options.signal?.throwIfAborted()
     const cachedSnapshots = await retryTransient(
-      async () => this.#sandboxes.listSnapshots({ template: "base", limit: 100 }),
+      async () => this.#sandboxes.listSnapshots({
+        template: SOLARI_SANDBOX_TEMPLATE,
+        limit: 100,
+      }),
       this.#retryOptions(),
     )
+    const snapshotName = `flakelab-${this.#options.snapshotKey}`
     const cached = cachedSnapshots.snapshots.find((snapshot) =>
-      snapshot.kind === "sandbox" && snapshot.name === this.#options.snapshotName)
+      snapshot.kind === "sandbox" && snapshot.name === snapshotName)
     if (cached) {
       this.#snapshotId = cached.id
-      this.#tracker.snapshotCacheHit()
+      this.#tracker.snapshotCacheHit(
+        "Found a prepared snapshot whose key matches every preparation input.",
+      )
       await this.#createSharedTarget()
       return
     }
+    this.#tracker.snapshotCacheMiss(
+      "No prepared snapshot matched every preparation input; created a new snapshot.",
+    )
     const source = await retryTransient(async () => this.#sandboxes.create({
-      template: "base",
-      timeoutMs: SANDBOX_TIMEOUT_MS,
+      template: SOLARI_SANDBOX_TEMPLATE,
+      timeoutMs: SOLARI_SANDBOX_TIMEOUT_MS,
       metadata: { product: "flakelab", role: "source" },
     }), this.#retryOptions())
     this.#trackSandbox(source)
     try {
       await source.connect()
       await source.files.write(`${CHECKOUT_APP_DIRECTORY}/server.py`, checkoutServerSource)
-      const command = await source.commands.run("sh", {
-        args: [
-          "-c",
-          `cd ${CHECKOUT_APP_DIRECTORY} && nohup python3 server.py >server.log 2>&1 &`,
-        ],
+      const command = await source.commands.run(CHECKOUT_START_SHELL, {
+        args: ["-c", CHECKOUT_START_COMMAND],
       })
       if (command.exitCode !== 0) {
         throw new Error("Checkout fixture failed to start in the prepared sandbox")
       }
       const preview = await source.previewUrl(CHECKOUT_PORT)
       await waitForPreview(preview.url, this.#options.signal)
-      this.#snapshotId = await source.snapshot(this.#options.snapshotName)
+      this.#snapshotId = await source.snapshot(snapshotName)
     } finally {
       await this.#releaseSandbox(source)
     }
@@ -140,6 +156,10 @@ export class SolariParallelExecutor {
       outcome = await this.#exerciseCheckout(browser.browser, this.#previewUrl, trial, startedAt)
     } catch (error) {
       const cause = error instanceof Error ? error : new Error("Solari trial failed")
+      const normalized = normalizeProviderError(cause)
+      if (normalized instanceof ProviderFailure) {
+        throw normalized
+      }
       outcome = {
         status: "error",
         durationMs: Date.now() - startedAt,
@@ -191,9 +211,9 @@ export class SolariParallelExecutor {
       throw new Error("Solari executor must be prepared before trials run")
     }
     const fork = await retryTransient(async () => this.#sandboxes.create({
-      template: "base",
+      template: SOLARI_SANDBOX_TEMPLATE,
       fromSnapshot: this.#snapshotId,
-      timeoutMs: SANDBOX_TIMEOUT_MS,
+      timeoutMs: SOLARI_SANDBOX_TIMEOUT_MS,
       lifecycle: { onTimeout: "kill" },
       metadata: { product: "flakelab", role: "shared-target" },
     }), this.#retryOptions())
@@ -235,7 +255,9 @@ export class SolariParallelExecutor {
   ): Promise<TrialOutcome> {
     const context = await browser.newContext()
     const page = await context.newPage()
-    const removeFault = trial.fault ? await installFault(page, trial.fault) : undefined
+    const removeFault = trial.faults.length > 0
+      ? await installFaults(page, trial.faults)
+      : undefined
     try {
       await page.goto(previewUrl)
       await page.getByRole("button", { name: "Place order" }).click()
@@ -263,7 +285,7 @@ export class SolariParallelExecutor {
       this.#retryOptions(),
     )
     if (!response.ok) {
-      throw new Error(`Solari browser session creation failed with HTTP ${response.status}`)
+      throw await solariResponseFailure(response)
     }
     const session = rawSessionSchema.parse(await response.json())
     this.#tracker.browserCreated()

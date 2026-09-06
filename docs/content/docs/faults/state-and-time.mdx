@@ -1,0 +1,75 @@
+---
+title: State and time
+description: Cookies, browser storage, clock jumps, locale, and timezone.
+---
+
+These families probe assumptions about the environment a session runs in.
+
+## `auth-cookie-expiry`
+
+Withholds one named cookie from matched requests **without persisting its value**. This
+reproduces a partially expired session rather than a fully logged-out one.
+
+```bash
+flakelab discover tests/auth.spec.ts \
+  --fault auth-cookie-expiry \
+  --cookie-name session-id
+```
+
+## `storage-state-delay`
+
+Keeps one named local-storage or session-storage entry temporarily invisible without
+deleting it, probing code that reads storage before initialization completes.
+
+```bash
+flakelab discover tests/storage.spec.ts \
+  --fault storage-state-delay \
+  --storage session-storage \
+  --storage-key auth-token
+```
+
+<Callout type="warn">
+Neither family records a cookie value or a stored value in any artifact.
+</Callout>
+
+## `clock-jump`
+
+Moves the wall clock while **preserving monotonic timer scheduling**. That distinction is
+what makes it diagnostic: it separates code that depends on `Date.now()` from code that
+depends on elapsed time.
+
+```bash
+flakelab discover tests/time.spec.ts \
+  --fault clock-jump \
+  --clock-offset-ms=-3600000 \
+  --jump-after-ms 25
+```
+
+## `locale` and `timezone`
+
+Use Playwright's browser-context configuration to change formatting, parsing, and date
+boundaries. BCP 47 language tags and IANA timezone names are validated before execution.
+
+```bash
+flakelab discover tests/locale.spec.ts --fault locale --locale fr-FR
+flakelab discover tests/dates.spec.ts --fault timezone --timezone America/New_York
+```
+
+## Options
+
+| Option | Applies to | Default |
+| --- | --- | --- |
+| `--cookie-name <name>` | `auth-cookie-expiry` | required |
+| `--storage <area>` | `storage-state-delay` | `local-storage` |
+| `--storage-key <key>` | `storage-state-delay` | required |
+| `--max-delay <ms>` | `storage-state-delay` | `250` |
+| `--clock-offset-ms <ms>` | `clock-jump` | `3600000` |
+| `--jump-after-ms <ms>` | `clock-jump` | `0` |
+| `--locale <tag>` | `locale` | `fr-FR` |
+| `--timezone <zone>` | `timezone` | `America/New_York` |
+
+<Callout type="info">
+Context-level locale, timezone, and related browser settings cannot always be faithfully
+retrofitted onto an existing page adapter. When they cannot, FlakeLab rejects the fault
+instead of approximating it.
+</Callout>

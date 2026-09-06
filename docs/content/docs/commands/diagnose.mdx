@@ -1,0 +1,89 @@
+---
+title: diagnose
+description: The primary workflow - observe first, then run only the cheapest useful next step.
+---
+
+```bash
+flakelab diagnose [test] [options]
+```
+
+A test target begins with a bounded scan; `--report` begins with read-only blob-report
+analysis. The command writes `.flakelab/runs/diagnose.json` atomically after every phase so
+interrupted work can be resumed.
+
+Diagnosis explains observed evidence *before* proposing cloud or AI work, and recommends the
+next experiment with a bounded trial count, expected duration, required credentials, and an
+estimated cost - or a clear statement that no estimate is available.
+
+After an eligible interactive diagnosis, FlakeLab always asks:
+
+```text
+Use Solari to prove a candidate fix? [y/N]
+```
+
+The default is no. Answering yes starts the bounded proof handoff and asks for an approved
+application source file when `--source` was not supplied, but AI candidate generation receives
+its own `[y/N]` consent prompt first. It follows local imports from the selected test file—or
+from tests discovered under a selected directory—and presents likely sources for explicit
+approval. Multiple matches are numbered and support Tab completion while typing. There is no
+unsafe source default: pressing Enter cancels instead of approving the test file. FlakeLab also
+compares its measured discovery estimate with
+`--max-seconds`; the displayed duration is a conservative ceiling of at least 10 minutes, or a
+larger calculated limit with 100% headroom rounded to the next minute. It is not presented as a
+prediction from the faster control scan. This accounts for fault injection, browser startup
+variance, and the final independent confirmation batch. After approval, FlakeLab checks
+`GROQ_API_KEY` and `SOLARI_API_KEY` before
+lengthy discovery begins. Missing keys can be pasted through hidden, run-once prompts. The
+prompts are skipped in CI and whenever stdin or stderr is not attached to a terminal, so
+automation cannot hang.
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--report <blob-report>` | none | Start from existing CI evidence. |
+| `--baseline <artifact>` | none | Compare report analysis with earlier evidence. |
+| `--runs <number>` | `4` | Repetitions in the control scan. |
+| `--discover` | off | Run local paired controls and minimize a trigger. |
+| `--investigate` | off | Explicitly enable bounded Groq investigation. |
+| `--repair` | off | Explicitly enable candidate generation and Solari proof. |
+| `--source <file>` | none | Approve an application source file; repeat up to seven times. |
+| `--evidence <path>` | `flakelab.investigation.json` | Investigation artifact. |
+| `--reproducer <path>` | `flakelab.repro.yaml` | Reproducer artifact. |
+| `--patch <path>` | `candidate.diff` | Candidate diff. |
+| `--proof <path>` | `flakelab.proof.json` | Proof matrix. |
+| `--html <path>` | `flakelab.report.html` | Portable report. |
+| `--open` | off | Open the generated report without prompting. |
+| `--model <name>` | `qwen/qwen3.8-27b` | Groq model identifier. |
+| `--max-cost <usd>` | `0.25` | Model spend ceiling checked before work starts. |
+| `--prompt-credentials` | off | Re-enter required keys through hidden prompts. |
+
+Diagnosis also accepts experiment bounds: `--trials`, `--concurrency`, `--seed`,
+`--max-delay`, `--min-rate`, `--pattern`, `--max-seconds`, `--max-steps`,
+`--max-experiments`, and `--max-trials`.
+
+## Provider phases are opt-in
+
+Nothing chargeable happens without explicit approval. Flags provide that approval in
+non-interactive workflows: `--investigate` enables Groq, while `--repair` enables Groq plus
+one disposable Solari microVM. In an interactive diagnosis, answering yes to the Solari
+handoff and the separate AI question provides the same explicit approval. FlakeLab prints its
+credential and cost boundary and preflights both credentials before lengthy work begins.
+
+## Examples
+
+```bash
+# Local only
+flakelab diagnose tests/checkout.spec.ts
+
+# Start from CI evidence
+flakelab diagnose --report ./blob-report --baseline previous.json
+
+# Local control scan, then minimize a trigger
+flakelab diagnose tests/checkout.spec.ts --discover
+```
+
+<Callout type="info">
+When diagnosis starts from `--report`, provide a test target before requesting experiments.
+FlakeLab will not guess what to execute.
+</Callout>

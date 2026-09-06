@@ -1,0 +1,71 @@
+---
+title: FlakeLab
+description: Find, reproduce, explain, and prove fixes for flaky Playwright tests.
+---
+
+FlakeLab turns an intermittent Playwright failure into a controlled experiment. It searches
+for a deterministic trigger, tests competing explanations against evidence, generates one
+narrow source candidate, and proves that candidate in a disposable sandbox - then hands you
+a reproducer, a proof matrix, and an offline report.
+
+The principle behind every stage: **AI proposes; deterministic evidence decides.**
+
+## Install nothing
+
+```bash
+npx flakelab@latest doctor
+npx flakelab@latest diagnose tests/checkout.spec.ts
+```
+
+`doctor` and `diagnose` consume no provider credits. FlakeLab uses your existing Playwright
+configuration; your tests keep importing `test` and `expect` from `@playwright/test`, and no
+fixture or source edit is required.
+
+## Start here
+
+<Cards>
+  <Card title="Introduction" href="/docs/introduction">
+    The problem, the principles, and the boundaries of what this tool claims.
+  </Card>
+  <Card title="Quick start" href="/docs/quick-start">
+    Five commands from a suspicious test to a proven candidate.
+  </Card>
+  <Card title="Concepts" href="/docs/concepts">
+    Matched controls, failure signatures, Wilson bounds, and minimization.
+  </Card>
+  <Card title="Commands" href="/docs/commands">
+    Twelve commands, their options, and their exit codes.
+  </Card>
+  <Card title="Faults" href="/docs/faults">
+    Seventeen deterministic fault families across five groups.
+  </Card>
+  <Card title="AI and security" href="/docs/ai-and-security">
+    What the model may do, what it may never do, and the threat model.
+  </Card>
+</Cards>
+
+## The shape of a run
+
+```text
+observe  ->  reproduce  ->  explain  ->  repair  ->  prove  ->  review
+  |             |             |            |          |          |
+ scan        discover     investigate    repair     Solari     report
+ analyze     replay                                 microVM
+  |             |             |            |          |          |
+ free         free          Groq       Groq+Solari  Solari      free
+```
+
+`diagnose` is the recommended entry point. It starts with the cheapest useful operation and
+moves into provider-backed work only when you explicitly ask for it.
+
+## For agents
+
+This site publishes machine-readable copies of every page.
+
+- [`/llms.txt`](/llms.txt) - an index of every page with titles and summaries.
+- [`/llms-full.txt`](/llms-full.txt) - every page concatenated as one Markdown document.
+- `/llms.mdx/<slug>` - the raw Markdown of a single page.
+
+Every documentation page also carries an **Open in** menu that hands the page to ChatGPT,
+Claude, Grok, Perplexity, or T3 Chat, and copies a ready-to-run command for Claude Code,
+Codex, Gemini CLI, Copilot CLI, or Cursor CLI.

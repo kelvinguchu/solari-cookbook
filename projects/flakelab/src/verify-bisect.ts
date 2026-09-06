@@ -15,7 +15,6 @@ import { withSolariTransport } from "./solari/transport.js"
 const execFileAsync = promisify(execFile)
 const DEMO_DELAY_MS = 125
 const DEMO_REPRODUCER: Reproducer = {
-  version: 1,
   test: "tests/checkout.spec.ts",
   seed: 42,
   trials: 4,

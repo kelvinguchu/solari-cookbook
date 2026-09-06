@@ -41,16 +41,16 @@ The output is evidence rather than an AI guess:
 
 ## What makes it different
 
-| Typical flaky-test tooling | FlakeLab |
-| --- | --- |
-| Detects repeated failure | Intervenes on suspected causes |
-| Stores traces | Connects each claim to experiment evidence |
-| Quarantines unstable tests | Produces a deterministic reproducer |
-| Reports a green rerun | Proves hostile and normal behavior |
+| Typical flaky-test tooling     | FlakeLab                                           |
+| ------------------------------ | -------------------------------------------------- |
+| Detects repeated failure       | Intervenes on suspected causes                     |
+| Stores traces                  | Connects each claim to experiment evidence         |
+| Quarantines unstable tests     | Produces a deterministic reproducer                |
+| Reports a green rerun          | Proves hostile and normal behavior                 |
 | Treats Git bisect as pass/fail | Bisects failure probability with confidence bounds |
 
 The model supplies investigative judgment through Vercel AI SDK and Groq. The deterministic
-engine—not the model—decides test outcomes, confidence, minimization, policy compliance, and proof.
+engine-not the model-decides test outcomes, confidence, minimization, policy compliance, and proof.
 
 ## CI and adoption
 
