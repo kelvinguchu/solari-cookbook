@@ -1,0 +1,28 @@
+---
+title: doctor
+description: Check local readiness and credential safety before anything runs.
+---
+
+```bash
+flakelab doctor
+```
+
+Checks Node.js, Playwright configuration, Chromium availability, whether evidence paths are
+Git-ignored, provider credential presence, and credential isolation.
+
+It reports whether a credential exists and where it came from - never its value and never a
+fingerprint.
+
+## What it checks
+
+| Check | Why it matters |
+| --- | --- |
+| Node.js | FlakeLab requires 20 or newer. |
+| Playwright project | A `playwright.config` file must be discoverable. |
+| Chromium | Local execution needs an installed browser. |
+| Evidence privacy | `.flakelab` output should be ignored by Git. |
+| `GROQ_API_KEY` | Optional; required only for AI investigation or repair. |
+| `SOLARI_API_KEY` | Optional; required only for isolated proof, publication, or bisect. |
+| Credential isolation | Provider keys are removed from Playwright subprocesses. |
+
+When a check needs attention, `doctor` prints the exact remediation command.

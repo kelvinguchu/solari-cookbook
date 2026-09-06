@@ -1,4 +1,3 @@
-import { config } from "dotenv"
 import { writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
@@ -7,17 +6,33 @@ import { resolveGitHistory } from "../bisect/git.js"
 import { bisectReportSchema } from "../bisect/schema.js"
 import { SolariRevisionEvaluator } from "../bisect/solari-evaluator.js"
 import { readReproducer } from "../reproducer/file.js"
+import { requireCredential } from "../security/credentials.js"
 import { withSolariTransport } from "../solari/transport.js"
+import { formatProviderBoundary } from "../ui/boundary.js"
+import { writeStderr } from "../ui/console.js"
+import { TerminalDocument } from "../ui/document.js"
+import { formatCount } from "../ui/format.js"
 import { ProgressReporter } from "../ui/progress.js"
-import type { CliValues } from "./options.js"
+import { stderrTheme } from "../ui/theme.js"
+import type { BisectOptions } from "./options.js"
 import { integerOption, rateOption, withInterruption } from "./options.js"
 
-export async function bisect(values: CliValues): Promise<void> {
-  config({ quiet: true })
-  const apiKey = process.env.SOLARI_API_KEY?.trim()
-  if (!apiKey) {
-    throw new Error("SOLARI_API_KEY is required to evaluate revisions in isolation")
-  }
+export async function bisect(values: BisectOptions): Promise<void> {
+  writeStderr(formatProviderBoundary({
+    credentials: ["SOLARI_API_KEY"],
+    detail: "Each candidate revision is checked out and replayed inside a disposable"
+      + " Solari sandbox. Sandboxes are released when the run ends.",
+    rows: [
+      { label: "Good revision", value: values.good },
+      { label: "Bad revision", value: values.bad },
+      { label: "Parallelism", value: values["bisect-parallelism"] },
+      { label: "Trial ceiling", value: values["max-trials"] },
+    ],
+    stage: "statistical bisect in Solari sandboxes",
+  }, stderrTheme()))
+  const apiKey = await requireCredential("solari", {
+    forcePrompt: values["prompt-credentials"],
+  })
   if (!values.good) {
     throw new Error("--good is required")
   }
@@ -30,7 +45,10 @@ export async function bisect(values: CliValues): Promise<void> {
   const totalConcurrency = integerOption(values.concurrency, "concurrency")
   const revisionConcurrency = Math.max(1, Math.floor(totalConcurrency / parallelism))
   const progress = new ProgressReporter()
-  progress.start(`Evaluating ${history.revisions.length} historical revisions in Solari`)
+  progress.start(
+    "statistical bisect",
+    `${formatCount(history.revisions.length, "historical revision")} in Solari`,
+  )
   const report = await withSolariTransport(async () =>
     withInterruption(async (signal) => {
       const evaluator = new SolariRevisionEvaluator({
@@ -58,9 +76,25 @@ export async function bisect(values: CliValues): Promise<void> {
   )
   const validated = bisectReportSchema.parse(report)
   await writeFile(reportPath, `${JSON.stringify(validated, null, 2)}\n`, "utf8")
+  const commit = validated.exact
+    ? validated.firstFailingCommit?.shortHash ?? "unavailable"
+    : validated.earliestKnownBadCommit.shortHash
   progress.done(validated.exact
-    ? `first failing commit ${validated.firstFailingCommit?.shortHash ?? "unavailable"}`
-    : `earliest proven bad commit ${validated.earliestKnownBadCommit.shortHash}`)
+    ? `first failing commit ${commit}`
+    : `earliest proven bad commit ${commit}`)
+  writeStderr(new TerminalDocument(stderrTheme())
+    .entry(
+      validated.exact ? "success" : "inconclusive",
+      validated.exact ? "introducing commit identified" : "bisect narrowed but not exact",
+      validated.exact
+        ? "One commit separates a proven good revision from a proven bad revision."
+        : "The search stopped before isolating a single introducing commit.",
+    )
+    .rows([
+      { label: "Commit", value: commit },
+      { label: "Evidence", value: values["bisect-report"] },
+    ])
+    .render())
   console.log(JSON.stringify({ reportPath, ...validated }, null, 2))
   if (!validated.exact) {
     process.exitCode = 2

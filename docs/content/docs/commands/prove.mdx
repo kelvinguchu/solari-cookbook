@@ -1,0 +1,45 @@
+---
+title: prove
+description: Run discover, replay, investigate, repair, and report as one bounded pipeline.
+---
+
+```bash
+flakelab prove <test> [options]
+flakelab <test> --prove [options]
+```
+
+Runs discovery, replay, investigation, repair, and reporting as one bounded pipeline. It
+accepts all discovery and fault-specific options plus the repair, evidence, model, report,
+`--open`, and `--publish` options.
+
+## The boundary notice
+
+Before any chargeable operation, `prove` states exactly what leaves your machine: the stage,
+what is transmitted, the credentials in use, the fault family, the model, the spend ceiling,
+the discovery time bound, and how many source files you approved.
+
+Local discovery and replay use no provider. Investigation and repair send compact, redacted
+evidence to Groq, and proof runs in one disposable Solari microVM.
+
+Interactive runs show a small `working...` pulse while a stage is quiet. Once Groq produces a
+candidate, its unified diff is rendered and saved before Solari proof starts. The working tree is
+never changed, and redirected or CI output receives no animation.
+
+The default local concurrency is `2`, and discovery is bounded to 600 seconds. Use
+`--concurrency 1` for projects whose tests share unsafe mutable resources.
+
+## Example
+
+```bash
+flakelab prove tests/checkout.spec.ts \
+  --fault viewport \
+  --viewport-width 390 \
+  --source src/checkout.ts \
+  --open
+```
+
+## Stage gating
+
+If replay fails to reproduce the discovered trigger, or the candidate is rejected, the
+pipeline stops rather than continuing to a conclusion it cannot support. The evidence
+collected up to that point is still written.

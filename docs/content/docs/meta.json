@@ -1,0 +1,21 @@
+{
+  "title": "FlakeLab",
+  "pages": [
+    "index",
+    "introduction",
+    "quick-start",
+    "concepts",
+    "---Reference---",
+    "commands",
+    "faults",
+    "evidence",
+    "---Platform---",
+    "solari",
+    "ai-and-security",
+    "ci",
+    "---Context---",
+    "comparisons",
+    "limits",
+    "troubleshooting"
+  ]
+}

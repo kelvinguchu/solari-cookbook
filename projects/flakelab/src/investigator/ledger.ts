@@ -68,8 +68,8 @@ export class InvestigationLedger {
     if (status === "confirmed" && !this.#hasCausalIntervention(evidence)) {
       throw new Error("Confirmation requires a fault that increased and confidently reproduced failure")
     }
-    if (status === "rejected" && evidence.every((entry) => entry.result.confirmed)) {
-      throw new Error("Rejection requires at least one experiment that did not confirm the prediction")
+    if (status === "rejected" && this.#hasCausalIntervention(evidence)) {
+      throw new Error("Rejection cannot cite an intervention that confirmed the prediction")
     }
     hypothesis.status = status
     hypothesis.evidenceExperimentIds = evidenceExperimentIds
@@ -94,7 +94,12 @@ export class InvestigationLedger {
     this.#conclusionHypothesisId = hypothesisId
   }
 
-  buildReport(test: string, model: string, usage: UsageSummary): InvestigationReport {
+  buildReport(
+    test: string,
+    model: string,
+    sourcePaths: string[],
+    usage: UsageSummary,
+  ): InvestigationReport {
     if (!this.#conclusion) {
       throw new Error("Investigator did not record a conclusion")
     }
@@ -109,9 +114,9 @@ export class InvestigationLedger {
       throw new Error("Investigator did not reject a competing hypothesis")
     }
     return investigationReportSchema.parse({
-      version: 1,
       test,
       model,
+      sourcePaths,
       conclusion: this.#conclusion,
       conclusionHypothesisId: this.#conclusionHypothesisId,
       conclusionEvidenceIds: this.#conclusionEvidenceIds,
@@ -133,20 +138,27 @@ export class InvestigationLedger {
       if (!evidence || (hypothesisId && evidence.hypothesisId !== hypothesisId)) {
         throw new Error(`Experiment ${id} is not valid evidence for this assessment`)
       }
+      if (
+        evidence.result.errors > 0
+        || evidence.result.trials === 0
+        || evidence.result.passed + evidence.result.failed !== evidence.result.trials
+      ) {
+        throw new Error(`Experiment ${id} is inconclusive and cannot support an assessment`)
+      }
       return evidence
     })
   }
 
   #hasCausalIntervention(evidence: ExperimentEvidence[]): boolean {
-    const baselineRate = Math.min(
+    const baselineUpperBound = Math.max(
       ...this.#experiments
         .filter((entry) => entry.condition.kind === "baseline")
-        .map((entry) => entry.result.failureRate),
+        .map((entry) => entry.result.upperBound80),
     )
     return evidence.some((entry) =>
       entry.condition.kind !== "baseline"
       && entry.result.confirmed
-      && entry.result.failureRate > baselineRate)
+      && entry.result.lowerBound80 > baselineUpperBound)
   }
 
   #describesHypothesis(summary: string, statement: string): boolean {

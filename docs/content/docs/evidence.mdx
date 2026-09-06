@@ -1,0 +1,60 @@
+---
+title: Evidence and artifacts
+description: What FlakeLab writes, where it writes it, and how output is redacted.
+---
+
+## Artifacts
+
+| Artifact | Default path | Purpose |
+| --- | --- | --- |
+| Scan | `.flakelab/runs/scan.json` | Per-test outcomes, intervals, signatures, and bounded attachment references. |
+| Analysis | `.flakelab/runs/analyze.json` | Validated CI report triage and baseline comparison. |
+| Diagnosis | `.flakelab/runs/diagnose.json` | Checkpoint, plan, actual usage, cleanup, and resumable phase state. |
+| Reproducer | `flakelab.repro.yaml` | Portable, strict fault and confirmation recipe. |
+| Discovery sidecar | next to the reproducer | Candidate-by-candidate control/intervention evidence. |
+| Investigation | `flakelab.investigation.json` | Hypotheses, experiments, assessment, and bounded source context. |
+| Candidate | `candidate.diff` | Reviewable application-source patch, never auto-applied. |
+| Proof | `flakelab.proof.json` | Static checks, hostile trials, controls, regressions, and cleanup. |
+| Report | `flakelab.report.html` | Self-contained offline evidence UI. |
+| Bisect | `flakelab.bisect.json` | Revision measurements, intervals, decisions, and boundary. |
+
+## The stdout contract
+
+Human summaries go to the terminal. Machine-readable `--json` output stays clean and
+parseable on stdout while progress, provider notices, and errors go to stderr.
+
+```bash
+flakelab scan tests/checkout.spec.ts --json > scan.json
+```
+
+Redirected and CI output contains no ANSI colour and no cursor-control sequences, so a log
+file reads the same as an interactive terminal.
+
+## The HTML report
+
+`flakelab report` bundles the React report client, the validated evidence, and a restrictive
+content security policy into **one** offline HTML file. It works from `file://`, makes zero
+runtime network requests, and embeds its own fonts.
+
+The report tells the debugging story in order: verdict, reproduction, evidence summary,
+experiment record, competing hypotheses, proof of repair, and reproducible artifacts.
+
+In an interactive terminal, report generation offers to open the local report. CI and
+redirected sessions never prompt or launch a browser implicitly.
+
+## Redaction
+
+Evidence paths are project-relative. Paths outside the project are reduced to a
+non-identifying placeholder and basename. Credential-like values are redacted before
+rendering or optional publication.
+
+<Callout type="warn">
+Redaction reduces risk but is not a substitute for secret hygiene. Treat traces and
+recordings from sensitive flows as confidential artifacts.
+</Callout>
+
+## Publication
+
+The default report is a local offline file. `--publish` uploads only the redacted report
+after an immediate interactive confirmation, exposes it through a signed Solari preview, and
+destroys the hosting sandbox after at most one hour. Publication is never automatic.

@@ -1,0 +1,49 @@
+---
+title: scan
+description: Repeat a Playwright target under normal conditions and classify what happens.
+---
+
+```bash
+flakelab scan <target> [options]
+flakelab <target> [options]
+```
+
+Runs the target repeatedly with Playwright retries disabled, using native `repeat-each`
+behavior and the JSON reporter. It classifies every selected test as `no-failure-observed`,
+`mixed-outcomes`, `failed-every-run`, `skipped`, or `errored`, and writes
+`.flakelab/runs/scan.json` by default.
+
+## Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--runs <number>` | `4` | Number of repetitions. |
+| `--concurrency <n>` | `2` | Playwright workers. Use `1` when shared resources cannot run safely in parallel. |
+| `--artifacts <dir>` | `.flakelab/runs` | Evidence directory. |
+| `--json` | off | Emit only the validated artifact JSON on stdout. |
+| `--verbose` | off | Append artifact JSON to the human summary. |
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | No failure was observed. |
+| `1` | Mixed outcomes or consistently failing outcomes. |
+| `2` | Infrastructure made the sample inconclusive. |
+
+## Examples
+
+```bash
+# The shortest useful invocation
+flakelab tests/checkout.spec.ts --runs 20
+
+# Machine-readable output for CI
+flakelab scan tests/checkout.spec.ts --json > scan.json
+```
+
+<Callout type="info">
+The default is two workers for a practical speed/isolation balance. Use `--concurrency 1` when
+a project shares ports, databases, accounts, or files unsafely. To investigate concurrency deliberately, use the
+[`worker-pressure`](/docs/faults/concurrency) fault instead of raising `--concurrency`
+during an unrelated experiment.
+</Callout>

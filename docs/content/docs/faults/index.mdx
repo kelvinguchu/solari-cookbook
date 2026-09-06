@@ -1,0 +1,64 @@
+---
+title: Fault catalog
+description: Seventeen deterministic fault families, each with a matched clean control.
+---
+
+FlakeLab supports 17 fault families. Every accepted causal claim is compared with a
+matched clean control; a fault that never actually applies is not counted as causal evidence.
+
+<Cards>
+  <Card title="Network" href="/docs/faults/network">
+    Timing, truncation, duplication, and ordering of API responses.
+  </Card>
+  <Card title="Lifecycle" href="/docs/faults/lifecycle">
+    Resource loading, startup events, and main-thread deadlines.
+  </Card>
+  <Card title="State and time" href="/docs/faults/state-and-time">
+    Cookies, browser storage, clocks, locale, and timezone.
+  </Card>
+  <Card title="Visual" href="/docs/faults/visual">
+    Viewport, reduced motion, and animation playback rate.
+  </Card>
+  <Card title="Concurrency" href="/docs/faults/concurrency">
+    Worker parallelism and shared-state interference.
+  </Card>
+</Cards>
+
+## Every family at a glance
+
+| Fault | What it probes | Primary options and defaults |
+| --- | --- | --- |
+| `network-delay` | API timing and request/response races. | `--pattern`, `--max-delay 250` ms |
+| `resource-loading-delay` | Startup dependencies on scripts, styles, images, fonts, or documents. | `--resource-type script`, `--pattern`, `--max-delay 250` |
+| `response-truncation` | Handling of incomplete response bodies. | `--pattern`, `--max-remove-bytes 1024` |
+| `response-duplication` | Handling of duplicated response tails. | `--pattern`, `--max-duplicate-bytes 1024` |
+| `response-reordering` | Races between adjacent matching responses. | `--pattern`, `--max-hold-ms 250` |
+| `startup-event-delay` | Application listeners registered around DOM ready or load. | `--startup-event dom-content-loaded`, `--pattern`, `--max-delay 250` |
+| `event-loop-stall` | Missed main-thread deadlines after DOM ready. | `--max-stall-ms 500`, `--stall-after-ms 0`, `--pattern` |
+| `auth-cookie-expiry` | Behavior when one named auth cookie is withheld. | `--cookie-name`, `--pattern` |
+| `storage-state-delay` | Reading local/session storage before one key becomes visible. | `--storage local-storage`, `--storage-key`, `--max-delay 250` |
+| `clock-jump` | Wall-clock assumptions while monotonic timers remain normal. | `--clock-offset-ms 3600000`, `--jump-after-ms 0`, `--pattern` |
+| `locale` | Formatting, parsing, and language assumptions. | `--locale fr-FR`, `--pattern` |
+| `timezone` | Date boundaries and timezone assumptions. | `--timezone America/New_York`, `--pattern` |
+| `viewport` | Responsive layout and visibility races. | `--viewport-width 375`, `--viewport-height 667`, `--pattern` |
+| `reduced-motion` | Accessibility-specific motion behavior. | `--pattern` |
+| `animation-speed` | Dependencies on CSS/Web Animation completion. | `--animation-rate 5`, `--pattern` |
+| `worker-pressure` | Suite behavior under Playwright worker parallelism. | `--max-workers 4` |
+| `shared-state-interference` | Collisions between overlapping copies of a test. | `--max-copies 4` |
+
+## Shared rules
+
+- Every fault has a strict schema, a deterministic seed or value, a safe bound, and a stable
+  artifact representation.
+- Faults are composable, and the minimizer can remove irrelevant faults and shrink numeric
+  values.
+- Every fault has a control comparison and cannot be declared causal from a failing run
+  alone.
+- Cleanup is proven on pass, failure, timeout, cancellation, and provider error.
+- Faults that require unsupported or unsafe integration are explicitly rejected instead of
+  approximated misleadingly.
+
+<Callout type="warn">
+Some proxy-based faults require matching HTTP traffic. They reject HTTPS-only or unmatched
+routes rather than claiming success.
+</Callout>

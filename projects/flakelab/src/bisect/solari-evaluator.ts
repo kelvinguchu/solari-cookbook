@@ -4,6 +4,7 @@ import { posix } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
 import { deriveTrialSeed } from "../core/plan.js"
+import type { NetworkDelayFault } from "../domain/schema.js"
 import type { Reproducer } from "../reproducer/schema.js"
 import { createRevisionArchive } from "./archive.js"
 import { classifyFailureProbability, wilsonInterval80 } from "./confidence.js"
@@ -71,8 +72,16 @@ function validateSelector(selector: string): void {
   }
 }
 
-function faultEnvironment(reproducer: Reproducer, trialIndex: number): Record<string, string> {
+function bisectFault(reproducer: Reproducer): NetworkDelayFault {
   const fault = reproducer.faults[0]
+  if (reproducer.faults.length !== 1 || fault.kind !== "network-delay") {
+    throw new Error("Solari revision bisect currently requires one network-delay fault")
+  }
+  return fault
+}
+
+function faultEnvironment(reproducer: Reproducer, trialIndex: number): Record<string, string> {
+  const fault = bisectFault(reproducer)
   return {
     FLAKELAB_FAULT_KIND: "network-delay",
     FLAKELAB_TRIAL_SEED: String(deriveTrialSeed(reproducer.seed, trialIndex)),
@@ -97,6 +106,7 @@ export class SolariRevisionEvaluator {
 
   constructor(options: SolariEvaluatorOptions) {
     validateSelector(options.reproducer.test)
+    bisectFault(options.reproducer)
     if (options.maxTrials < options.reproducer.trials || options.maxTrials > 100) {
       throw new Error("max trials must be at least the reproducer trials and at most 100")
     }

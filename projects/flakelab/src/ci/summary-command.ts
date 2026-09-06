@@ -6,7 +6,8 @@ import { parseArgs } from "node:util"
 import { investigationReportSchema } from "../investigator/schema.js"
 import { proofOfFixSchema } from "../repair/schema.js"
 import { reproducerSchema } from "../reproducer/schema.js"
-import { buildJobSummary } from "./job-summary.js"
+import { analysisArtifactSchema } from "../analysis/schema.js"
+import { buildAnalysisJobSummary, buildJobSummary } from "./job-summary.js"
 
 async function readJson(path: string): Promise<object> {
   return JSON.parse(await readFile(resolve(path), "utf8")) as object
@@ -16,17 +17,24 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       investigation: { type: "string", default: "flakelab.investigation.json" },
+      analysis: { type: "string" },
       output: { type: "string", default: ".flakelab/job-summary.md" },
       proof: { type: "string", default: "flakelab.proof.json" },
       reproducer: { type: "string", default: "flakelab.repro.yaml" },
     },
   })
-  const summary = buildJobSummary({
-    artifactUrl: process.env.FLAKELAB_ARTIFACT_URL,
-    investigation: investigationReportSchema.parse(await readJson(values.investigation)),
-    proof: proofOfFixSchema.parse(await readJson(values.proof)),
-    reproducer: reproducerSchema.parse(parse(await readFile(resolve(values.reproducer), "utf8"))),
-  })
+  const artifactUrl = process.env.FLAKELAB_ARTIFACT_URL
+  const summary = values.analysis
+    ? buildAnalysisJobSummary(
+      analysisArtifactSchema.parse(await readJson(values.analysis)),
+      artifactUrl,
+    )
+    : buildJobSummary({
+      artifactUrl,
+      investigation: investigationReportSchema.parse(await readJson(values.investigation)),
+      proof: proofOfFixSchema.parse(await readJson(values.proof)),
+      reproducer: reproducerSchema.parse(parse(await readFile(resolve(values.reproducer), "utf8"))),
+    })
   const outputPath = resolve(values.output)
   await mkdir(dirname(outputPath), { recursive: true })
   await writeFile(outputPath, summary, "utf8")

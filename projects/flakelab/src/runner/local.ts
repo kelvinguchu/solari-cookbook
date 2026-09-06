@@ -39,13 +39,13 @@ function timestamp(): string {
 
 function countFailures(trials: TrialPlan[], outcomes: TrialOutcome[], hasFault: boolean): number {
   return trials.reduce((count, trial, index) => {
-    const matchesGroup = Boolean(trial.fault) === hasFault
+    const matchesGroup = (trial.faults.length > 0) === hasFault
     return matchesGroup && outcomes[index]?.status !== "passed" ? count + 1 : count
   }, 0)
 }
 
 function summarize(trials: TrialPlan[], outcomes: TrialOutcome[]): RunSummary {
-  const baselineCount = trials.filter((trial) => !trial.fault).length
+  const baselineCount = trials.filter((trial) => trial.faults.length === 0).length
   const faultCount = trials.length - baselineCount
   const baselineFailures = countFailures(trials, outcomes, false)
   const faultFailures = countFailures(trials, outcomes, true)

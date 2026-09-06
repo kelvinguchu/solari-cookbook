@@ -1,0 +1,52 @@
+---
+title: Visual
+description: Viewport, reduced motion, and animation playback rate.
+---
+
+Visual faults use native Playwright context controls. They change what the browser renders,
+never what the test asserts.
+
+## `viewport`
+
+Changes the browser viewport, probing responsive layout and visibility races - an element
+that is present on a desktop layout but off-screen or collapsed on a phone.
+
+```bash
+flakelab discover tests/layout.spec.ts \
+  --fault viewport \
+  --viewport-width 375 \
+  --viewport-height 667
+```
+
+Dimensions are bounded from 200 to 7680 pixels.
+
+## `reduced-motion`
+
+Sets the reduced-motion preference, probing accessibility-specific code paths that skip or
+shorten transitions.
+
+```bash
+flakelab discover tests/motion.spec.ts --fault reduced-motion
+```
+
+## `animation-speed`
+
+Changes browser animation playback rate **without accelerating timers**. That separation
+matters: it isolates tests that wait on an animation finishing from tests that wait on a
+timeout.
+
+```bash
+flakelab discover tests/animation.spec.ts \
+  --fault animation-speed \
+  --animation-rate 5
+```
+
+Rates are bounded from 0.1x to 10x.
+
+## Options
+
+| Option | Applies to | Default |
+| --- | --- | --- |
+| `--viewport-width <px>` | `viewport` | `375` |
+| `--viewport-height <px>` | `viewport` | `667` |
+| `--animation-rate <multiplier>` | `animation-speed` | `5` |

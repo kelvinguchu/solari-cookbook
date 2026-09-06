@@ -12,7 +12,7 @@ function required(value: string | undefined, name: string): string {
 }
 
 function safeOutputValue(value: string): string {
-  if (!/^[a-zA-Z0-9._\/-]*$/u.test(value)) {
+  if (!/^[a-zA-Z0-9._/-]*$/u.test(value)) {
     throw new Error("selected test path contains unsupported characters for GitHub output")
   }
   return value

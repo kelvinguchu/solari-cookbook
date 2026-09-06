@@ -7,7 +7,11 @@ export interface ResourceUsage {
   browserSessionsCreated: number
   browserSessionsClosed: number
   infrastructureRetries: number
-  snapshotCacheHit: boolean
+  snapshotCache: {
+    key: string
+    reason: string
+    status: "hit" | "miss" | "pending"
+  }
 }
 
 export class ResourceUsageTracker {
@@ -19,8 +23,16 @@ export class ResourceUsageTracker {
   #peakConcurrency = 0
   #sandboxesCreated = 0
   #sandboxesKilled = 0
-  #snapshotCacheHit = false
+  #snapshotCache: ResourceUsage["snapshotCache"]
   #trialRuntimeMs = 0
+
+  constructor(snapshotKey: string) {
+    this.#snapshotCache = {
+      key: snapshotKey,
+      reason: "Snapshot lookup has not completed.",
+      status: "pending",
+    }
+  }
 
   sandboxCreated(): void {
     this.#sandboxesCreated += 1
@@ -42,8 +54,12 @@ export class ResourceUsageTracker {
     this.#infrastructureRetries += 1
   }
 
-  snapshotCacheHit(): void {
-    this.#snapshotCacheHit = true
+  snapshotCacheHit(reason: string): void {
+    this.#snapshotCache = { ...this.#snapshotCache, reason, status: "hit" }
+  }
+
+  snapshotCacheMiss(reason: string): void {
+    this.#snapshotCache = { ...this.#snapshotCache, reason, status: "miss" }
   }
 
   trialStarted(): number {
@@ -67,7 +83,7 @@ export class ResourceUsageTracker {
       browserSessionsCreated: this.#browserSessionsCreated,
       browserSessionsClosed: this.#browserSessionsClosed,
       infrastructureRetries: this.#infrastructureRetries,
-      snapshotCacheHit: this.#snapshotCacheHit,
+      snapshotCache: { ...this.#snapshotCache },
     }
   }
 }

@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util"
 
 import { evaluateExperiment } from "../discovery/evaluate.js"
-import type { Fault } from "../domain/schema.js"
+import { faultSetSchema } from "../domain/schema.js"
 import { createPlaywrightExecutor } from "../runner/playwright-executor.js"
 
 function required(value: string | undefined, name: string): string {
@@ -23,27 +23,22 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       concurrency: { type: "string" },
-      "delay-ms": { type: "string" },
+      "faults-json": { type: "string" },
       hostile: { type: "boolean", default: false },
       "min-rate": { type: "string" },
-      pattern: { type: "string" },
       seed: { type: "string" },
       selector: { type: "string" },
       trials: { type: "string" },
     },
   })
-  const fault: Fault | undefined = values.hostile
-    ? {
-        kind: "network-delay",
-        delayMs: integer(values["delay-ms"], "delay-ms"),
-        pattern: required(values.pattern, "pattern"),
-      }
-    : undefined
+  const faults = values.hostile
+    ? faultSetSchema.parse(JSON.parse(required(values["faults-json"], "faults-json")))
+    : []
   const result = await evaluateExperiment(
     createPlaywrightExecutor(process.cwd(), required(values.selector, "selector")),
     {
       concurrency: integer(values.concurrency, "concurrency"),
-      fault,
+      faults,
       minimumFailureRate: Number(required(values["min-rate"], "min-rate")),
       seed: integer(values.seed, "seed"),
       trials: integer(values.trials, "trials"),

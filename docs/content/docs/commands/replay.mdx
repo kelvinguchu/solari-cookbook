@@ -1,0 +1,28 @@
+---
+title: replay
+description: Re-run a saved reproducer and check that the recorded signature still appears.
+---
+
+```bash
+flakelab replay <reproducer> [options]
+```
+
+Validates a reproducer, re-executes its exact fault set, and checks that the recorded
+normalized failure signature still appears.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--concurrency <n>` | `2` | Playwright workers used for replay trials. |
+
+## Why replay matters
+
+The reproducer is the artifact that makes a flake reviewable. Replay is how a colleague, a
+CI job, or a future you confirms that the recipe still reproduces the same failure - on a
+different machine, at a different time, after unrelated changes.
+
+Exit code `1` means the reproducer did not reproduce, either because no failure occurred or
+because a *different* failure signature appeared.
+
+```bash
+flakelab replay flakelab.repro.yaml --concurrency 4
+```

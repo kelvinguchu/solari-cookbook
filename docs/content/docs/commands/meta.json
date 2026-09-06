@@ -1,0 +1,21 @@
+{
+  "title": "Commands",
+  "pages": [
+    "index",
+    "---Observe---",
+    "scan",
+    "analyze",
+    "doctor",
+    "---Reproduce---",
+    "diagnose",
+    "discover",
+    "replay",
+    "resume",
+    "---Explain and prove---",
+    "investigate",
+    "repair",
+    "prove",
+    "report",
+    "bisect"
+  ]
+}

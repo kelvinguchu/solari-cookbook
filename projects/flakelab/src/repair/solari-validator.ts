@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises"
 
 import type { ExperimentResult } from "../discovery/evaluate.js"
 import { experimentResultSchema } from "../investigator/schema.js"
+import type { Fault } from "../domain/schema.js"
 import type { Reproducer } from "../reproducer/schema.js"
 import { retryTransient } from "../solari/retry.js"
 
@@ -39,6 +40,10 @@ export interface RemoteValidationResult {
 interface ProjectFile {
   localPath: string
   remotePath: string
+}
+
+export function remoteFaultArguments(faults: Fault[], hostile: boolean): string[] {
+  return ["--faults-json", JSON.stringify(faults), ...(hostile ? ["--hostile"] : [])]
 }
 
 async function listProjectFiles(root: string, directory = root): Promise<ProjectFile[]> {
@@ -175,7 +180,6 @@ function proofArguments(
   trials: number,
   hostile: boolean,
 ): string[] {
-  const fault = options.reproducer.faults[0]
   return [
     "exec",
     "tsx",
@@ -190,11 +194,7 @@ function proofArguments(
     String(options.reproducer.seed),
     "--min-rate",
     String(options.reproducer.expectedFailure.minimumRate),
-    "--delay-ms",
-    String(fault.delayMs),
-    "--pattern",
-    fault.pattern,
-    ...(hostile ? ["--hostile"] : []),
+    ...remoteFaultArguments(options.reproducer.faults, hostile),
   ]
 }
 

@@ -1,0 +1,52 @@
+---
+title: Continuous integration
+description: GitHub Actions, blob-report analysis, secrets, and artifact retention.
+---
+
+The repository includes a composite action and a pull-request workflow. The action installs
+pinned Node, pnpm, and Chromium tooling; selects changed tests; runs bounded diagnosis;
+uploads evidence; and writes a job summary.
+
+## Credential-free analysis
+
+Blob-report analysis runs in CI without provider credentials and without rerunning tests.
+This is the cheapest useful CI integration and the right place to start.
+
+```bash
+flakelab analyze ./blob-report --baseline previous.json --json
+```
+
+With an artifact-backed baseline, the action identifies new failure signatures, uploads the
+analysis and retained Playwright artifacts, and writes a concise Markdown summary - no
+hosted database required.
+
+## Provider-backed diagnosis
+
+Provider-backed diagnosis should run behind a protected `flakelab` GitHub environment with
+`GROQ_API_KEY` and `SOLARI_API_KEY` stored as environment secrets.
+
+Fork pull requests do not receive those secrets, checkout credentials are not persisted, and
+the workflow avoids `pull_request_target`.
+
+## Changed-test selection
+
+Selection prefers modified Playwright specs. Changes to application code, support code,
+Playwright config, manifests, or lockfiles fall back to bounded `tests/e2e` and
+`tests/fixtures` targets.
+
+The action deeply diagnoses the first selected test to keep cost and time predictable, while
+preserving the complete selection manifest for review.
+
+## Output in CI
+
+Redirected and CI output contains no colour and no cursor-control sequences, so a job log
+reads exactly like an interactive terminal. JSON output stays clean on stdout while progress
+and provider notices go to stderr.
+
+Exit codes are stable and safe to gate on:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | No failure observed. |
+| `1` | Mixed outcomes, failure in every run, or command error. |
+| `2` | Inconclusive because of test or Playwright infrastructure. |

@@ -1,0 +1,75 @@
+---
+title: AI and security
+description: What the model may do, what it may never do, and the threat model.
+---
+
+## The AI boundary
+
+The investigator uses the provider-neutral Vercel AI SDK with Groq. The current default
+model is `qwen/qwen3.8-27b`.
+
+### The model may
+
+- propose competing hypotheses;
+- choose from bounded experiment types;
+- assess compact, redacted results;
+- propose exact edits to source that **you** approved.
+
+### The model may not
+
+- run arbitrary shell commands;
+- choose unbounded trial counts or provider spend;
+- read the repository freely;
+- receive provider keys;
+- change tests, assertions, lint rules, or Playwright configuration;
+- apply a patch locally;
+- decide that statistical evidence is causal.
+
+FlakeLab owns schema validation, budgets, path confinement, experiment execution, confidence
+calculations, patch policy, proof, redaction, and cleanup.
+
+## Credentials
+
+Credential lookup order is:
+
+1. the current process environment, including protected CI secrets;
+2. a local `.env` file;
+3. hidden interactive input, kept in memory for the process lifetime.
+
+There is deliberately no `--api-key` option, because command arguments can appear in shell
+history and process listings. Use `--prompt-credentials` to ignore an outdated environment
+or `.env` value and enter a replacement once through hidden input.
+
+Groq and Solari keys are stripped from the environment passed to Playwright subprocesses.
+Application-specific environment variables remain available to the test suite. Credentials
+are not stored in FlakeLab evidence and are not injected into proof sandboxes.
+
+## Threat model
+
+Protected assets include source code, test logic, credentials, cookies and browser storage,
+traces and recordings, and paid provider quotas.
+
+Controls include:
+
+- provider keys accepted only at explicit boundaries and removed from test subprocesses;
+- path-confined, size-bounded source reads with credential-pattern blocking;
+- structured process arguments rather than untrusted shell concatenation;
+- strict schemas for reproducer, investigation, proof, report, and checkpoint artifacts;
+- archive validation against traversal, links, malformed structure, and excessive expansion;
+- policy validation before any candidate executes;
+- disposable proof and bisect sandboxes with guaranteed cleanup paths;
+- local, offline reports by default;
+- redaction before rendering or optional publication;
+- cost, time, step, experiment, trial, and concurrency ceilings;
+- GitHub fork protections and no `pull_request_target` workflow.
+
+## Residual risk
+
+An approved application source file or test could itself attempt exfiltration when executed.
+
+<Callout type="warn">
+Use least-privilege, low-balance provider keys; limit CI environment access; require
+protected-environment reviewers; rotate exposed credentials; and treat traces or recordings
+from sensitive flows as confidential artifacts. Redaction reduces risk but is not a
+substitute for secret hygiene.
+</Callout>

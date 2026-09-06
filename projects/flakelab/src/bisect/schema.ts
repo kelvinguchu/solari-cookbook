@@ -22,7 +22,6 @@ export const revisionEvidenceSchema = z.object({
 })
 
 export const bisectReportSchema = z.object({
-  version: z.literal(1),
   goodRevision: revisionSchema,
   badRevision: revisionSchema,
   firstFailingCommit: revisionSchema.nullable(),
@@ -32,7 +31,7 @@ export const bisectReportSchema = z.object({
   evaluatedRevisionCount: z.number().int().min(2),
   totalRevisionCount: z.number().int().min(2),
   evidence: z.array(revisionEvidenceSchema).min(2),
-})
+}).strict()
 
 export type BisectReport = z.infer<typeof bisectReportSchema>
 export type Revision = z.infer<typeof revisionSchema>

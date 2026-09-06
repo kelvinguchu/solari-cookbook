@@ -7,8 +7,18 @@ import { createNdjsonWriter } from "../artifacts/ndjson.js"
 import { runRequestSchema } from "../domain/schema.js"
 import type { DiagnosticResult } from "../runner/local.js"
 import { runLocalDiagnostics } from "../runner/local.js"
-import { checkoutServerSource } from "./checkout-fixture.js"
-import { SolariParallelExecutor } from "./executor.js"
+import {
+  CHECKOUT_APP_DIRECTORY,
+  CHECKOUT_PORT,
+  checkoutServerSource,
+} from "./checkout-fixture.js"
+import {
+  CHECKOUT_START_COMMAND,
+  CHECKOUT_START_SHELL,
+  SOLARI_SANDBOX_TEMPLATE,
+  SOLARI_SANDBOX_TIMEOUT_MS,
+  SolariParallelExecutor,
+} from "./executor.js"
 import type { ResourceUsage } from "./usage.js"
 
 export interface SolariDemoOptions {
@@ -25,23 +35,55 @@ export interface SolariDemoOptions {
 
 const execFileAsync = promisify(execFile)
 
-export function snapshotCacheKey(commit: string, lockfile: string, fixture: string): string {
+export interface SnapshotPreparationInput {
+  appDirectory: string
+  commit: string
+  fixture: string
+  lockfile: string
+  port: number
+  runtime: string
+  startShell: string
+  startCommand: string
+  template: string
+  timeoutMs: number
+}
+
+export function snapshotCacheKey(input: SnapshotPreparationInput): string {
+  const stableInput: SnapshotPreparationInput = {
+    appDirectory: input.appDirectory,
+    commit: input.commit,
+    fixture: input.fixture,
+    lockfile: input.lockfile,
+    port: input.port,
+    runtime: input.runtime,
+    startShell: input.startShell,
+    startCommand: input.startCommand,
+    template: input.template,
+    timeoutMs: input.timeoutMs,
+  }
   return createHash("sha256")
-    .update(commit)
-    .update("\0")
-    .update(lockfile)
-    .update("\0")
-    .update(fixture)
+    .update(JSON.stringify(stableInput))
     .digest("hex")
     .slice(0, 24)
 }
 
-async function snapshotName(projectRoot: string): Promise<string> {
+async function snapshotKey(projectRoot: string): Promise<string> {
   const [{ stdout: commit }, lockfile] = await Promise.all([
     execFileAsync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }),
     readFile(resolve(projectRoot, "pnpm-lock.yaml"), "utf8"),
   ])
-  return `flakelab-${snapshotCacheKey(commit.trim(), lockfile, checkoutServerSource)}`
+  return snapshotCacheKey({
+    appDirectory: CHECKOUT_APP_DIRECTORY,
+    commit: commit.trim(),
+    fixture: checkoutServerSource,
+    lockfile,
+    port: CHECKOUT_PORT,
+    runtime: "python3",
+    startCommand: CHECKOUT_START_COMMAND,
+    startShell: CHECKOUT_START_SHELL,
+    template: SOLARI_SANDBOX_TEMPLATE,
+    timeoutMs: SOLARI_SANDBOX_TIMEOUT_MS,
+  })
 }
 
 export interface SolariDemoResult extends DiagnosticResult {
@@ -60,17 +102,17 @@ export async function runSolariDemo(options: SolariDemoOptions): Promise<SolariD
     runs: options.runs,
     seed: options.seed,
     artifactDirectory: runDirectory,
-    fault: {
+    faults: [{
       kind: "network-delay",
       pattern: "**/api/checkout",
       delayMs: options.delayMs,
-    },
+    }],
   })
   const executor = new SolariParallelExecutor({
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     signal: options.signal,
-    snapshotName: await snapshotName(options.projectRoot),
+    snapshotKey: await snapshotKey(options.projectRoot),
   })
   let result: DiagnosticResult
   let snapshotId: string

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client"
 
 import { ReportApp } from "./report-app.js"
 import "./report.css"
+import "./report-details.css"
 import { evidenceReportSchema } from "./schema.js"
 
 const dataElement = document.querySelector<HTMLScriptElement>("#flakelab-report")
