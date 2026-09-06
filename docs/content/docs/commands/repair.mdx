@@ -10,6 +10,10 @@ flakelab repair <investigation> [options]
 Generates one application-source candidate and proves it in a disposable Solari microVM.
 **The local working tree is not changed.**
 
+In an interactive terminal, FlakeLab renders the candidate as a color-aware unified diff and
+writes the complete patch to `candidate.diff` before isolated proof begins. Quiet Playwright,
+Groq, and Solari intervals show a small `working...` pulse; redirected and CI output stays static.
+
 ## Options
 
 | Option | Default | Meaning |
@@ -18,7 +22,7 @@ Generates one application-source candidate and proves it in a disposable Solari 
 | `--reproducer <path>` | `flakelab.repro.yaml` | Reproducer used in hostile proof. |
 | `--patch <path>` | `candidate.diff` | Output candidate diff. |
 | `--proof <path>` | `flakelab.proof.json` | Output proof matrix. |
-| `--concurrency <n>` | `1` | Playwright workers inside proof. |
+| `--concurrency <n>` | `2` | Playwright workers inside proof. |
 | `--max-seconds <number>` | `90` | Candidate-generation time ceiling. |
 | `--model <name>` | `qwen/qwen3.8-27b` | Groq model identifier. |
 | `--max-cost <usd>` | `0.25` | Candidate-generation spend ceiling. |

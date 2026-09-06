@@ -58,3 +58,27 @@ export async function applyCandidatePatch(
   }
   return patches.join("\n")
 }
+
+/** Builds the exact patch without changing the developer's working tree. */
+export async function createCandidateDiff(
+  projectRoot: string,
+  candidate: CandidatePatch,
+): Promise<string> {
+  const patches = await Promise.all(candidate.edits.map(async (edit) => {
+    const beforeFile = await readFile(resolve(projectRoot, edit.path), "utf8")
+    const afterFile = beforeFile.replace(edit.before, edit.after)
+    if (afterFile === beforeFile) {
+      throw new Error(`Candidate edit did not change ${edit.path}`)
+    }
+    return createTwoFilesPatch(
+      `a/${edit.path}`,
+      `b/${edit.path}`,
+      beforeFile,
+      afterFile,
+      "before",
+      "candidate",
+      { context: 3 },
+    )
+  }))
+  return patches.join("\n")
+}

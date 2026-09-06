@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test"
 
-import { buildDiscoveredReproducer } from "../../src/commands/discover.js"
+import {
+  buildDiscoveredReproducer,
+  discoveryFailureDetail,
+} from "../../src/commands/discover.js"
 import { discoverAuthCookieExpiry } from "../../src/discovery/auth-cookie.js"
 import { discoverEventLoopStall } from "../../src/discovery/event-loop.js"
 import { evaluateExperiment } from "../../src/discovery/evaluate.js"
@@ -14,6 +17,13 @@ import {
 import { discoverResourceLoadingDelay } from "../../src/discovery/resource-loading.js"
 import { discoverStartupEventDelay } from "../../src/discovery/startup-event.js"
 import { discoverStorageStateDelay } from "../../src/discovery/storage-state.js"
+
+test("discovery timeout reports incomplete planned work instead of denying evidence", () => {
+  expect(discoveryFailureDetail(true, 72, 96)).toBe(
+    "incomplete · 72 of 96 planned trials",
+  )
+  expect(discoveryFailureDetail(false, 8, 96)).toBe("no confirmed trigger · 8 trials")
+})
 
 test("confidence evaluation rejects insufficient evidence", async () => {
   let index = 0
@@ -29,6 +39,21 @@ test("confidence evaluation rejects insufficient evidence", async () => {
 
   expect(result.failureRate).toBe(0.25)
   expect(result.confirmed).toBe(false)
+})
+
+test("experiment summaries retain the actionable runner error", async () => {
+  const result = await evaluateExperiment(() => Promise.resolve({
+    status: "error",
+    durationMs: 1,
+    exitCode: 1,
+    failureReason: "project-level event-loop-stall fault did not match the document",
+    failureSignature: "unmatched-fault",
+  }), { concurrency: 2, faults: [], minimumFailureRate: 0.7, seed: 1, trials: 4 })
+
+  expect(result).toMatchObject({
+    dominantErrorReason: "project-level event-loop-stall fault did not match the document",
+    errors: 4,
+  })
 })
 
 test("causal discovery can amplify an existing matching failure signature", async () => {

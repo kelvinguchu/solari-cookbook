@@ -10,6 +10,11 @@ import { createCausalEvaluator } from "./evaluate.js"
 
 const MINIMUM_CONFIRMATION_TRIALS = 12
 
+export function networkDelayTrialBound(trials: number, maximumDelayMs: number): number {
+  const interventionBatches = 1 + Math.ceil(Math.log2(Math.max(1, maximumDelayMs)))
+  return 2 * (trials * interventionBatches + Math.max(trials, MINIMUM_CONFIRMATION_TRIALS))
+}
+
 export interface DelayDiscoveryOptions {
   concurrency: number
   maximumDelayMs: number

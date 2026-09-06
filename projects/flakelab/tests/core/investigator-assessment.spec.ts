@@ -1,0 +1,164 @@
+import { expect, test } from "@playwright/test"
+
+import {
+  applyInvestigationAssessment,
+  generateValidInvestigationAssessment,
+  investigationAssessmentSchema,
+  validateExperimentEvidence,
+} from "../../src/investigator/assessment.js"
+import { RecoverableGenerationError } from "../../src/investigator/generation.js"
+import { InvestigationLedger } from "../../src/investigator/ledger.js"
+
+const passingResult = {
+  confirmed: false,
+  errors: 0,
+  failed: 0,
+  failureRate: 0,
+  failureSignatures: [],
+  lowerBound80: 0,
+  passed: 4,
+  representativeRuns: [],
+  trials: 4,
+  upperBound80: 0.2911,
+}
+
+const failingResult = {
+  confirmed: true,
+  dominantFailureSignature: "checkout-timeout",
+  errors: 0,
+  failed: 4,
+  failureRate: 1,
+  failureSignatures: [{
+    failures: 4,
+    failureRate: 1,
+    lowerBound80: 0.7089,
+    signature: "checkout-timeout",
+    upperBound80: 1,
+  }],
+  lowerBound80: 0.7089,
+  passed: 0,
+  representativeRuns: [],
+  trials: 4,
+  upperBound80: 1,
+}
+
+const validAssessment = investigationAssessmentSchema.parse({
+  assessments: [
+    {
+      explanation: "Network delay reliably reproduced the checkout timeout",
+      hypothesisId: "H1",
+      status: "confirmed",
+    },
+    {
+      explanation: "Request failure did not reproduce the checkout timeout",
+      hypothesisId: "H2",
+      status: "rejected",
+    },
+  ],
+  conclusion: "Network delay confirms the checkout response timing race mechanism",
+  conclusionHypothesisId: "H1",
+})
+
+function investigationState() {
+  const ledger = new InvestigationLedger()
+  const timing = ledger.propose(
+    "Checkout has a response timing race",
+    "Network delay will reproduce the checkout timeout",
+  )
+  const status = ledger.propose(
+    "Checkout mishandles failed requests",
+    "A failed request will expose missing error handling",
+  )
+  const evidence = [
+    ledger.addExperiment(timing.id, { kind: "baseline" }, passingResult),
+    ledger.addExperiment(status.id, { kind: "request-failure", statusCode: 503 }, passingResult),
+    ledger.addExperiment(timing.id, { delayMs: 125, kind: "network-delay" }, failingResult),
+  ]
+  return { evidence, hypotheses: [timing, status], ledger }
+}
+
+test("FlakeLab binds evidence IDs instead of trusting the model to do it", () => {
+  const state = investigationState()
+  applyInvestigationAssessment(state, {
+    assessments: [
+      {
+        explanation: "Request failure did not reproduce the checkout timeout",
+        hypothesisId: "H2",
+        status: "rejected",
+      },
+      {
+        explanation: "Network delay reliably reproduced the checkout timeout",
+        hypothesisId: "H1",
+        status: "confirmed",
+      },
+    ],
+    conclusion: "Network delay confirms the checkout response timing race mechanism",
+    conclusionHypothesisId: "H1",
+  })
+
+  const report = state.ledger.buildReport("tests/checkout.spec.ts", "test-model", [
+    "tests/checkout.spec.ts",
+  ], { estimatedCostUsd: 0, inputTokens: 0, outputTokens: 0 })
+  expect(report.hypotheses[0].evidenceExperimentIds).toEqual(["E3"])
+  expect(report.hypotheses[1].evidenceExperimentIds).toEqual(["E2"])
+  expect(report.conclusionEvidenceIds).toEqual(["E3"])
+})
+
+test("errored experiments stop before model assessment", () => {
+  const state = investigationState()
+  state.evidence[2].result = {
+    ...passingResult,
+    errors: 4,
+    passed: 0,
+  }
+
+  expect(() => validateExperimentEvidence(state.evidence)).toThrow(
+    /Experiment E3 produced 4 runner error\(s\) and is inconclusive/u,
+  )
+})
+
+test("schema-invalid assessment JSON receives one bounded correction attempt", async () => {
+  const prompts: string[] = []
+  const temperatures: number[] = []
+
+  const result = await generateValidInvestigationAssessment({
+    generate: (prompt, temperature) => {
+      prompts.push(prompt)
+      temperatures.push(temperature)
+      if (prompts.length === 1) {
+        return Promise.reject(new RecoverableGenerationError(
+          "missing properties: conclusionHypothesisId, conclusion",
+          '{"assessments":[]}',
+          { inputTokens: 10, outputTokens: 5 },
+        ))
+      }
+      return Promise.resolve({
+        output: validAssessment,
+        usage: { inputTokens: 12, outputTokens: 6 },
+      })
+    },
+    initialPrompt: "Assess the causal evidence.",
+    maxAttempts: 2,
+  })
+
+  expect(result.assessment).toEqual(validAssessment)
+  expect(result.attempts).toEqual([
+    { inputTokens: 10, outputTokens: 5 },
+    { inputTokens: 12, outputTokens: 6 },
+  ])
+  expect(temperatures).toEqual([0.2, 0])
+  expect(prompts[1]).toContain("conclusionHypothesisId")
+  expect(prompts[1]).toContain('{"assessments":[]}')
+})
+
+test("assessment schema correction respects its attempt budget", async () => {
+  await expect(generateValidInvestigationAssessment({
+    generate: () => Promise.reject(new RecoverableGenerationError(
+      "missing properties: conclusionHypothesisId, conclusion",
+      '{"assessments":[]}',
+      { inputTokens: 10, outputTokens: 5 },
+    )),
+    initialPrompt: "Assess the causal evidence.",
+    maxAttempts: 1,
+  })).rejects.toThrow(/missing properties: conclusionHypothesisId, conclusion/u)
+})

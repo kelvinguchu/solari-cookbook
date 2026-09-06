@@ -7,6 +7,7 @@ import { helpText } from "../../src/cli-help.js"
 import { parseCliArguments } from "../../src/cli-arguments.js"
 import { formatProviderBoundary } from "../../src/ui/boundary.js"
 import { TerminalDocument } from "../../src/ui/document.js"
+import { formatCandidateDiff } from "../../src/ui/diff.js"
 import { ProgressReporter } from "../../src/ui/progress.js"
 import { displayWidth, sanitizeLine, sanitizeText, stripAnsi } from "../../src/ui/text.js"
 import type { TerminalContext } from "../../src/ui/theme.js"
@@ -165,6 +166,69 @@ test("progress reporting writes plain, line-oriented stages to its own stream", 
     expect(output).not.toContain(sequence)
   }
   expect(output.split("\n").filter((line) => line !== "")).toHaveLength(3)
+})
+
+test("interactive progress pulses during quiet intervals without cursor control", () => {
+  const chunks: string[] = []
+  let pulse = (): void => undefined
+  const reporter = new ProgressReporter({
+    animate: true,
+    schedulePulse: (scheduled) => {
+      pulse = scheduled
+      return (): void => undefined
+    },
+    theme: createTheme(context({ isTTY: false })),
+    write: (chunk) => chunks.push(chunk),
+  })
+
+  reporter.start("repair candidate", "policy-bounded generation")
+  pulse()
+  pulse()
+  reporter.done("1 source edit")
+
+  const output = chunks.join("")
+  expect(output).toContain("· working..\n")
+  expect(output).toContain("✓ repair candidate · 1 source edit")
+  for (const sequence of CURSOR_SEQUENCES) {
+    expect(output).not.toContain(sequence)
+  }
+})
+
+test("command failures close an active progress pulse before the error", () => {
+  const chunks: string[] = []
+  let pulse = (): void => undefined
+  const reporter = new ProgressReporter({
+    animate: true,
+    schedulePulse: (scheduled) => {
+      pulse = scheduled
+      return (): void => undefined
+    },
+    theme: createTheme(context({ isTTY: false })),
+    write: (chunk) => chunks.push(chunk),
+  })
+
+  reporter.start("investigation")
+  pulse()
+  ProgressReporter.failActive()
+
+  expect(chunks.join("")).toContain("· working.\n✗ investigation · failed")
+})
+
+test("candidate diffs are sanitized, colored by meaning, and bounded", () => {
+  const hostile = `${ESCAPE}[2K`
+  const diff = [
+    "--- a/src/checkout.ts",
+    "+++ b/src/checkout.ts",
+    "@@ -1 +1 @@",
+    `-submit()${hostile}`,
+    "+await submit()",
+  ].join("\n")
+  const rendered = formatCandidateDiff(diff, "candidate.diff", createTheme(context()))
+
+  expect(stripAnsi(rendered)).toContain("Candidate diff")
+  expect(stripAnsi(rendered)).toContain("-submit()[2K")
+  expect(rendered).toContain(ESCAPE)
+  expect(rendered).not.toContain(`${ESCAPE}[2K`)
 })
 
 test("a completed command names its result, its evidence, and the next command", () => {

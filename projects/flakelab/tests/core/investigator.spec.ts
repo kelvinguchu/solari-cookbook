@@ -37,6 +37,19 @@ const failingResult = {
   upperBound80: 1,
 }
 
+const erroredResult = {
+  confirmed: false,
+  errors: 4,
+  failed: 0,
+  failureRate: 0,
+  failureSignatures: [],
+  lowerBound80: 0,
+  passed: 0,
+  representativeRuns: [],
+  trials: 4,
+  upperBound80: 0,
+}
+
 test("ledger accepts only an evidence-grounded causal conclusion", () => {
   const ledger = new InvestigationLedger()
   const timing = ledger.propose(
@@ -94,6 +107,53 @@ test("ledger rejects confirmation without a causal intervention", () => {
     [baseline.id],
     "Baseline evidence is not causal",
   )).toThrow(/Confirmation requires/u)
+})
+
+test("ledger requires confidence separation from the baseline", () => {
+  const ledger = new InvestigationLedger()
+  const hypothesis = ledger.propose(
+    "Checkout has a timing race",
+    "Network delay will cause the assertion to fail",
+  )
+  ledger.addExperiment(hypothesis.id, { kind: "baseline" }, {
+    ...passingResult,
+    failed: 2,
+    failureRate: 0.5,
+    passed: 2,
+    upperBound80: 0.78,
+  })
+  const intervention = ledger.addExperiment(
+    hypothesis.id,
+    { delayMs: 125, kind: "network-delay" },
+    { ...failingResult, lowerBound80: 0.71 },
+  )
+
+  expect(() => ledger.assess(
+    hypothesis.id,
+    "confirmed",
+    [intervention.id],
+    "The rates overlap too much to establish a causal increase",
+  )).toThrow(/Confirmation requires/u)
+})
+
+test("ledger never treats runner errors as hypothesis evidence", () => {
+  const ledger = new InvestigationLedger()
+  const hypothesis = ledger.propose(
+    "Checkout has an event loop race",
+    "An event loop stall will cause the assertion to fail",
+  )
+  const evidence = ledger.addExperiment(
+    hypothesis.id,
+    { durationMs: 500, kind: "event-loop-stall", startAfterMs: 0 },
+    erroredResult,
+  )
+
+  expect(() => ledger.assess(
+    hypothesis.id,
+    "rejected",
+    [evidence.id],
+    "The intervention did not confirm the prediction",
+  )).toThrow(/inconclusive/u)
 })
 
 test("experiment budget prevents unbounded model-selected work", () => {

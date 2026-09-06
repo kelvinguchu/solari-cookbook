@@ -18,7 +18,7 @@ sidecar.
 | `--fault <family>` | `network-delay` | Fault family to search. |
 | `--pattern <glob>` | `**/api/checkout` | Request or document pattern for applicable faults. |
 | `--trials <number>` | `4` | Trials per candidate batch. |
-| `--concurrency <n>` | `1` | Playwright workers per trial batch. |
+| `--concurrency <n>` | `2` | Playwright workers per trial batch. Use `1` for suites with unsafe shared state. |
 | `--min-rate <rate>` | `0.7` | Requested intervention failure rate, greater than 0 and at most 1. |
 | `--seed <number>` | `1` | Deterministic seed. |
 | `--max-seconds <n>` | `300` | Elapsed-time ceiling for discovery. |

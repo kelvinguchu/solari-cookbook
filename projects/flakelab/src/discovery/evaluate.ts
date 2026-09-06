@@ -35,6 +35,7 @@ export interface CausalEffect {
 export interface ExperimentResult {
   causalEffect?: CausalEffect
   confirmed: boolean
+  dominantErrorReason?: string
   dominantFailureSignature?: string
   dominantFailureReason?: string
   errors: number
@@ -157,6 +158,8 @@ function summarize(
   const confidence = wilsonInterval(failed, outcomes.length)
   const failureSignatures = signatureResults(outcomes, outcomes.length)
   const dominantFailureSignature = failureSignatures[0]?.signature
+  const dominantErrorReason = outcomes.find((outcome) =>
+    outcome.status === "error" && outcome.failureReason)?.failureReason
   const representativeRuns = (["passed", "failed"] as const).flatMap((status) => {
     const entry = completed.find((trial) => trial.outcome.status === status)
     if (!entry) {
@@ -174,6 +177,7 @@ function summarize(
       errors === 0
       && failureRate >= minimumFailureRate
       && confidence.lowerBound80 >= minimumFailureRate,
+    dominantErrorReason,
     dominantFailureSignature,
     dominantFailureReason: dominantReason(outcomes, dominantFailureSignature),
     errors,

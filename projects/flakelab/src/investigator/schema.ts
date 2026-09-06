@@ -22,6 +22,7 @@ export const experimentResultSchema = z.object({
     treatmentRate: z.number().min(0).max(1),
   }).optional(),
   confirmed: z.boolean(),
+  dominantErrorReason: z.string().min(1).max(2_000).optional(),
   dominantFailureSignature: z.string().min(1).optional(),
   dominantFailureReason: z.string().min(1).max(2_000).optional(),
   errors: z.number().int().nonnegative(),

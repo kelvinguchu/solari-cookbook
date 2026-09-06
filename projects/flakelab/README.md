@@ -70,9 +70,9 @@ traces, screenshots, and videos are retained with the owned analysis evidence un
 retention, while temporary archive copies and conversion files are removed.
 
 The scan explicitly disables Playwright retries so a retry is never mistaken for an independent
-statistical repetition. It uses one Playwright worker by default because arbitrary test suites may
-share ports, databases, caches, or workspace files. Use `--concurrency` greater than `1` only when
-those resources are safe for normal Playwright worker parallelism. Traces, screenshots, videos,
+statistical repetition. It uses two Playwright workers by default for a practical speed/isolation
+balance. Use `--concurrency 1` when a suite shares ports, databases, caches, or workspace files
+unsafely. Traces, screenshots, videos,
 and ordinary test output stay in a unique directory beneath the selected evidence directory;
 FlakeLab removes only its temporary JSON reporter file.
 
@@ -193,7 +193,7 @@ the evidence for every candidate. Every candidate alternates matched-seed contro
 trials. A pre-existing failure is allowed, but the intervention is causal only when the same
 normalized failure signature reaches the requested rate and its 80% lower confidence bound exceeds
 the control's upper bound. Discovery prints each completed trial to stderr
-and stops at the five-minute default elapsed-time ceiling; set `--max-seconds` explicitly when a
+and stops at the ten-minute default elapsed-time ceiling; set `--max-seconds` explicitly when a
 suite needs a different local budget. Replay the result with:
 
 ```bash
@@ -350,12 +350,18 @@ received. FlakeLab rejects test changes,
 assertion weakening, lint suppressions, credential-like additions, path escapes, and numeric-only
 timeout increases before execution.
 
-The candidate is copied into a disposable Solari microVM. Typecheck, lint, hostile trials, clean
+The candidate diff is rendered in an interactive terminal and saved to `candidate.diff` before
+proof begins, without changing the working tree. The candidate is then copied into a disposable
+Solari microVM. Typecheck, lint, hostile trials, clean
 controls, and up to 50 nested or co-located `.spec.*` and `.test.*` regression files all run there.
 The machine is destroyed afterward, and the
 candidate is returned as a reviewable diff; FlakeLab never applies it to the local checkout.
 Cold validation installs the pinned Node/pnpm toolchain and Chromium, so it is intentionally
 slower than the future snapshot-backed warm path.
+
+While an interactive stage is waiting on Playwright, Groq, or Solari, FlakeLab prints a small
+`working...` pulse. Redirected output and CI logs remain static, and machine-readable stdout is
+unchanged.
 
 ## Evidence report
 

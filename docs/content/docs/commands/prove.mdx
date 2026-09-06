@@ -21,6 +21,13 @@ the discovery time bound, and how many source files you approved.
 Local discovery and replay use no provider. Investigation and repair send compact, redacted
 evidence to Groq, and proof runs in one disposable Solari microVM.
 
+Interactive runs show a small `working...` pulse while a stage is quiet. Once Groq produces a
+candidate, its unified diff is rendered and saved before Solari proof starts. The working tree is
+never changed, and redirected or CI output receives no animation.
+
+The default local concurrency is `2`, and discovery is bounded to 600 seconds. Use
+`--concurrency 1` for projects whose tests share unsafe mutable resources.
+
 ## Example
 
 ```bash

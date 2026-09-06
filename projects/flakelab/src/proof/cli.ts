@@ -40,7 +40,7 @@ export function parseProveArguments(args: string[]): ProveInvocation {
       "max-experiments": DEFINITIONS.maxExperiments,
       "max-hold-ms": DEFINITIONS.maxHoldMs,
       "max-remove-bytes": DEFINITIONS.maxRemoveBytes,
-      "max-seconds": DEFINITIONS.maxSeconds,
+      "max-seconds": DEFINITIONS.discoveryMaxSeconds,
       "max-stall-ms": DEFINITIONS.maxStallMs,
       "max-steps": DEFINITIONS.maxSteps,
       "max-trials": DEFINITIONS.maxTrials,

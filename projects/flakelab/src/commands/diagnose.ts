@@ -15,6 +15,7 @@ import {
   restoreDiagnosisContext,
   saveDiagnosis,
   scanObservation,
+  updateDiagnosisWorkflow,
 } from "../diagnosis/run-state.js"
 import type {
   DiagnosisContext,
@@ -22,13 +23,20 @@ import type {
   Observation,
 } from "../diagnosis/run-state.js"
 import type { DiagnosisStage } from "../diagnosis/schema.js"
-import { requestSolariProof } from "../diagnosis/solari-handoff.js"
+import { buildDiscoveryBudget } from "../diagnosis/discovery-budget.js"
+import {
+  requestSolariProof,
+} from "../diagnosis/solari-handoff.js"
 import { formatDiagnosisSummary } from "../diagnosis/summary.js"
+import { discoverRepairSourceCandidates } from "../investigator/safe-source.js"
+import { preflightProofCredentials } from "../proof/preflight.js"
 import { redactText } from "../report/redaction.js"
-import { formatProviderBoundary } from "../ui/boundary.js"
-import { writeStderr, writeStdout } from "../ui/console.js"
-import { formatCount } from "../ui/format.js"
-import { stderrTheme, stdoutTheme } from "../ui/theme.js"
+import { writeStdout } from "../ui/console.js"
+import { stdoutTheme } from "../ui/theme.js"
+import {
+  integerOption,
+  positiveNumberOption,
+} from "./options.js"
 import type { DiagnoseOptions } from "./options.js"
 
 function shouldRunScan(
@@ -130,17 +138,6 @@ async function runDiscoveryStage(context: DiagnosisContext): Promise<void> {
 
 async function runInvestigationStage(context: DiagnosisContext): Promise<void> {
   const { projectRoot, target, values } = context
-  writeStderr(formatProviderBoundary({
-    credentials: ["GROQ_API_KEY"],
-    detail: "--investigate explicitly enables bounded Groq usage. Only compact experiment"
-      + " results and redacted failure metadata are transmitted.",
-    rows: [
-      { label: "Model", value: values.model },
-      { label: "Cost ceiling", value: `$${values["max-cost"]}` },
-      { label: "Time ceiling", value: `${values["max-seconds"]}s` },
-    ],
-    stage: "bounded Groq investigation",
-  }, stderrTheme()))
   const { investigate } = await import("./investigate.js")
   const startedAt = Date.now()
   const report = await investigate(target ?? "", {
@@ -174,17 +171,6 @@ async function runInvestigationStage(context: DiagnosisContext): Promise<void> {
 
 async function runRepairStage(context: DiagnosisContext): Promise<DiagnosisStage> {
   const { projectRoot, values } = context
-  writeStderr(formatProviderBoundary({
-    credentials: ["GROQ_API_KEY", "SOLARI_API_KEY"],
-    detail: "--repair explicitly enables Groq candidate generation and one disposable"
-      + " Solari microVM for isolated proof.",
-    rows: [
-      { label: "Model", value: values.model },
-      { label: "Cost ceiling", value: `$${values["max-cost"]}` },
-      { label: "Approved source", value: formatCount(values.source.length, "file") },
-    ],
-    stage: "Groq repair and isolated Solari proof",
-  }, stderrTheme()))
   const { repair } = await import("./repair.js")
   const startedAt = Date.now()
   const result = await repair(values.evidence, {
@@ -357,25 +343,54 @@ async function continueDiagnosis(context: DiagnosisContext): Promise<void> {
   writeStdout(formatDiagnosisSummary(context.checkpoint, portableArtifactPath, stdoutTheme()))
 }
 
-async function offerSolariProof(target: string, values: DiagnoseOptions): Promise<void> {
+function discoveryBudget(context: DiagnosisContext): {
+  configuredSeconds: number
+  estimatedSeconds: number
+  recommendedSeconds: number
+} {
+  const { checkpoint, values } = context
+  return buildDiscoveryBudget({
+    concurrency: integerOption(values.concurrency, "concurrency"),
+    configuredSeconds: positiveNumberOption(values["max-seconds"], "max-seconds"),
+    elapsedMilliseconds: checkpoint.observation.elapsedMilliseconds,
+    observedRuns: integerOption(values.runs, "runs"),
+    plannedTrials: checkpoint.recommendation.plannedTrials,
+  })
+}
+
+async function offerSolariProof(context: DiagnosisContext): Promise<void> {
+  const { target, values } = context
+  if (!target) {
+    return
+  }
   if (values.repair) {
     return
   }
-  const sources = await requestSolariProof(target, values.source)
-  if (!sources) {
+  const request = await requestSolariProof(values.source, discoveryBudget(context), {
+    discoverSources: async () => discoverRepairSourceCandidates(context.projectRoot, target),
+  })
+  if (!request) {
     return
   }
-  const { parseProveArguments } = await import("../proof/cli.js")
-  const args = [target]
-  for (const source of sources) {
-    args.push("--source", source)
+  await preflightProofCredentials(values["prompt-credentials"])
+  updateDiagnosisWorkflow(context, {
+    ...values,
+    discover: true,
+    investigate: true,
+    "max-seconds": String(request.maxSeconds),
+    repair: true,
+    source: request.sources,
+  })
+  try {
+    await continueDiagnosis(context)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "Proof pipeline failed"
+    const checkpoint = portableProjectPath(context.projectRoot, context.artifactPath)
+    throw new Error(
+      `${message}\nSaved completed stages. Resume with: flakelab resume "${checkpoint}"`,
+      { cause },
+    )
   }
-  if (values.open) {
-    args.push("--open")
-  }
-  const invocation = parseProveArguments(args)
-  const { prove } = await import("./prove.js")
-  await prove(invocation.target, invocation.options)
 }
 
 export async function diagnose(
@@ -417,9 +432,7 @@ export async function diagnose(
     throw error
   }
   await continueDiagnosis(context)
-  if (target) {
-    await offerSolariProof(target, values)
-  }
+  await offerSolariProof(context)
 }
 
 export async function resumeDiagnosis(path: string): Promise<void> {

@@ -32,9 +32,12 @@ Use Solari to prove a candidate fix? [y/N]
 
 Press Enter to stop after the free local diagnosis. Answer `y` to approve the Solari
 handoff. FlakeLab then separately asks whether AI may investigate and generate the candidate.
-After both approvals, it asks which source file may be changed when `--source` was not
-supplied, checks both provider credentials up front, and starts the bounded proof pipeline.
-CI and piped commands never pause for these prompts.
+After both approvals, FlakeLab follows the selected test's local imports and suggests likely
+application sources when `--source` was not supplied. Approve a single match, or select from
+numbered, Tab-completable paths when several are found. The test file is never approved by
+default. FlakeLab then compares the measured discovery estimate with `--max-seconds`, offers a
+raised limit with headroom when needed, checks both provider credentials, and starts the bounded
+proof pipeline. CI and piped commands never pause for these prompts.
 
 Exit codes: `0` when no failure was observed, `1` for mixed or consistently failing
 outcomes, and `2` when infrastructure makes the sample inconclusive.

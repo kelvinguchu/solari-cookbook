@@ -16,6 +16,7 @@ import {
   discoverResponseDuplication,
   discoverResponseReordering,
   discoverResponseTruncation,
+  networkDelayTrialBound,
 } from "../discovery/minimize.js"
 import type { ResourceLoadingDiscoveryResult } from "../discovery/resource-loading.js"
 import { discoverResourceLoadingDelay } from "../discovery/resource-loading.js"
@@ -321,14 +322,40 @@ async function reportedDiscovery(
   values: DiscoverOptions,
   progress: TrialProgress,
   maxSeconds: number,
+  plannedTrials: number | undefined,
   reporter: ProgressReporter,
 ): Promise<DiscoveryResult> {
   try {
     return await runBoundedDiscovery(selector, values, progress, maxSeconds)
   } catch (error) {
-    reporter.fail(`no confirmed trigger · ${progress.completed} trials`)
+    const timedOut = error instanceof Error && error.message.includes("--max-seconds")
+    reporter.fail(discoveryFailureDetail(timedOut, progress.completed, plannedTrials))
     throw error
   }
+}
+
+export function discoveryFailureDetail(
+  timedOut: boolean,
+  completedTrials: number,
+  plannedTrials: number | undefined,
+): string {
+  if (!timedOut) {
+    return `no confirmed trigger · ${completedTrials} trials`
+  }
+  const progress = plannedTrials === undefined
+    ? `${completedTrials} trials`
+    : `${completedTrials} of ${plannedTrials} planned trials`
+  return `incomplete · ${progress}`
+}
+
+function plannedDiscoveryTrials(values: DiscoverOptions): number | undefined {
+  if (values.fault !== "network-delay") {
+    return undefined
+  }
+  return networkDelayTrialBound(
+    integerOption(values.trials, "trials"),
+    integerOption(values["max-delay"], "max-delay"),
+  )
 }
 
 export async function discover(selector: string, values: DiscoverOptions): Promise<DiscoveryResult> {
@@ -343,7 +370,14 @@ export async function discover(selector: string, values: DiscoverOptions): Promi
     `bounded to ${formatSeconds(maxSeconds)} · stable triggers receive a 12-trial confirmation`,
   )
   const progress = new TrialProgress(reporter, maxSeconds)
-  const result = await reportedDiscovery(selector, values, progress, maxSeconds, reporter)
+  const result = await reportedDiscovery(
+    selector,
+    values,
+    progress,
+    maxSeconds,
+    plannedDiscoveryTrials(values),
+    reporter,
+  )
   reporter.done(`${describeTrigger(result)} · ${progress.completed} trials`)
   await writeReproducer(outputPath, buildDiscoveredReproducer(
     selector,

@@ -2,6 +2,7 @@ import { parseCliArguments, type CliInvocation } from "./cli-arguments.js"
 import { helpText, VERSION } from "./cli-help.js"
 import { writeStderr, writeStdout } from "./ui/console.js"
 import { TerminalDocument } from "./ui/document.js"
+import { ProgressReporter } from "./ui/progress.js"
 import { stderrTheme, stdoutTheme } from "./ui/theme.js"
 
 type ExecutableInvocation = Exclude<CliInvocation, { command: "help" | "version" }>
@@ -12,6 +13,7 @@ type NonScanInvocation = Exclude<
 
 const PROVIDER_COMMANDS = new Set<ExecutableInvocation["command"]>([
   "bisect",
+  "diagnose",
   "investigate",
   "prove",
   "repair",
@@ -119,6 +121,7 @@ async function main(): Promise<void> {
     providerCommand = PROVIDER_COMMANDS.has(invocation.command)
     await runCommand(invocation)
   } catch (error) {
+    ProgressReporter.failActive()
     let message = "FlakeLab failed"
     if (error instanceof Error) {
       message = providerCommand ? await providerErrorMessage(error) : error.message

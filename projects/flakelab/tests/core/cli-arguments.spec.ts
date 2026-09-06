@@ -10,7 +10,7 @@ test("the shortest invocation scans an explicit target", () => {
     target: ".",
     options: {
       artifacts: ".flakelab/runs",
-      concurrency: "1",
+      concurrency: "2",
       json: false,
       runs: "4",
       verbose: false,
@@ -42,7 +42,7 @@ test("discover selects a bounded fault family explicitly", () => {
     options: {
       fault: "response-truncation",
       "max-remove-bytes": "64",
-      "max-seconds": "300",
+      "max-seconds": "600",
     },
   })
   expect(parseCliArguments([
@@ -231,7 +231,14 @@ test("analyze accepts one report source and only its own options", () => {
 test("diagnose accepts a target or a read-only report and gates new experiments", () => {
   expect(parseCliArguments(["diagnose", "tests/checkout.spec.ts"])).toMatchObject({
     command: "diagnose",
-    options: { discover: false, investigate: false, repair: false },
+    options: {
+      concurrency: "2",
+      discover: false,
+      investigate: false,
+      "max-seconds": "600",
+      "max-steps": "4",
+      repair: false,
+    },
     target: "tests/checkout.spec.ts",
   })
   expect(parseCliArguments([
@@ -306,7 +313,10 @@ test("prove works as a command and as a target shortcut", () => {
   expect(command).toMatchObject({
     command: "prove",
     options: {
+      concurrency: "2",
       fault: "viewport",
+      "max-seconds": "600",
+      "max-steps": "4",
       source: ["src/checkout.ts"],
       "viewport-height": "844",
       "viewport-width": "390",

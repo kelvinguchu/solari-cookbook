@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { readFile, readdir, writeFile } from "node:fs/promises"
+import { resolve } from "node:path"
 
 import {
   diagnosisInputHash,
@@ -7,6 +8,10 @@ import {
   readDiagnosisCheckpoint,
   writeDiagnosisCheckpoint,
 } from "../../src/diagnosis/checkpoint.js"
+import {
+  restoreDiagnosisContext,
+  updateDiagnosisWorkflow,
+} from "../../src/diagnosis/run-state.js"
 import { diagnosisArtifactSchema } from "../../src/diagnosis/schema.js"
 
 function checkpoint() {
@@ -123,4 +128,31 @@ test("checkpoint writes replace atomically and validate their input hash", async
   tampered.input.target = "tests/other.spec.ts"
   await writeFile(path, `${JSON.stringify(tampered)}\n`, "utf8")
   await expect(readDiagnosisCheckpoint(path)).rejects.toThrow("integrity hash")
+})
+
+test("interactive proof turns the observed checkpoint into a resumable workflow", () => {
+  const context = restoreDiagnosisContext(
+    resolve(".flakelab/runs/diagnose.json"),
+    checkpoint(),
+    resolve("."),
+  )
+
+  updateDiagnosisWorkflow(context, {
+    ...context.values,
+    discover: true,
+    investigate: true,
+    "max-seconds": "600",
+    repair: true,
+    source: ["src/checkout.ts"],
+  })
+
+  expect(nextDiagnosisPhase(context.checkpoint)).toBe("discover")
+  expect(context.checkpoint.input.options).toMatchObject({
+    discover: true,
+    investigate: true,
+    "max-seconds": "600",
+    repair: true,
+    source: ["src/checkout.ts"],
+  })
+  expect(context.checkpoint.inputHash).toBe(diagnosisInputHash(context.checkpoint.input))
 })

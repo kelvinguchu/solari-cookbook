@@ -1,12 +1,15 @@
-import { readFile, stat } from "node:fs/promises"
+import { readFile, readdir, stat } from "node:fs/promises"
+import type { Dirent } from "node:fs"
 import { dirname, extname, relative, resolve } from "node:path"
 
 const MAX_SOURCE_BYTES = 64 * 1_024
 const MAX_CONTEXT_FILES = 8
 const MAX_APPROVED_SOURCE_FILES = MAX_CONTEXT_FILES - 1
+const MAX_DISCOVERY_TEST_FILES = 20
 const ALLOWED_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx"])
 const SECRET_ASSIGNMENT = /(?:api[_-]?key|authorization|password|secret|token)\s*[:=]\s*["'][^"']{8,}/iu
 const LOCAL_IMPORT = /\bfrom\s+["'](\.[^"']+)["']/gu
+const TEST_FILE = /\.(?:spec|test)\.(?:js|jsx|mjs|ts|tsx)$/iu
 
 export interface SafeSource {
   content: string
@@ -23,6 +26,15 @@ function resolveSafeSource(projectRoot: string, selector: string): string {
     throw new Error("Only JavaScript or TypeScript test source can be inspected")
   }
   return sourcePath
+}
+
+function resolveSafeProjectPath(projectRoot: string, selector: string): string {
+  const selectedPath = resolve(projectRoot, selector)
+  const pathFromRoot = relative(projectRoot, selectedPath)
+  if (pathFromRoot.startsWith("..") || pathFromRoot.includes("node_modules")) {
+    throw new Error("Test selection must stay inside the project and outside dependencies")
+  }
+  return selectedPath
 }
 
 export async function readSafeTestSource(
@@ -108,4 +120,74 @@ export function readSafeRepairContext(
     )
   }
   return readSafeContext(projectRoot, [selectedTest, ...approvedSourcePaths])
+}
+
+interface DirectoryContents {
+  directories: string[]
+  tests: string[]
+}
+
+function classifyDirectoryEntries(directory: string, entries: Dirent[]): DirectoryContents {
+  const contents: DirectoryContents = { directories: [], tests: [] }
+  for (const entry of entries) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+      continue
+    }
+    const path = resolve(directory, entry.name)
+    if (entry.isDirectory()) {
+      contents.directories.push(path)
+    } else if (entry.isFile() && TEST_FILE.test(entry.name)) {
+      contents.tests.push(path)
+    }
+  }
+  return contents
+}
+
+async function directoryContents(directory: string): Promise<DirectoryContents> {
+  const entries = (await readdir(directory, { withFileTypes: true }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  return classifyDirectoryEntries(directory, entries)
+}
+
+async function testFilesUnder(directory: string): Promise<string[]> {
+  const pending = [directory]
+  const tests: string[] = []
+  while (pending.length > 0 && tests.length < MAX_DISCOVERY_TEST_FILES) {
+    const current = pending.shift()!
+    const contents = await directoryContents(current)
+    const available = MAX_DISCOVERY_TEST_FILES - tests.length
+    pending.push(...contents.directories)
+    tests.push(...contents.tests.slice(0, available))
+  }
+  return tests
+}
+
+async function selectedTestFiles(projectRoot: string, selector: string): Promise<string[]> {
+  const selectedPath = resolveSafeProjectPath(projectRoot, selector)
+  const details = await stat(selectedPath)
+  if (details.isFile()) {
+    return [resolveSafeSource(projectRoot, selectedPath)]
+  }
+  if (details.isDirectory()) {
+    return testFilesUnder(selectedPath)
+  }
+  return []
+}
+
+export async function discoverRepairSourceCandidates(
+  projectRoot: string,
+  selector: string,
+): Promise<string[]> {
+  const tests = await selectedTestFiles(projectRoot, selector)
+  const selectedTests = new Set(tests.map((path) => relative(projectRoot, path)))
+  const candidates = new Set<string>()
+  for (const testPath of tests) {
+    const context = await readSafeContext(projectRoot, [testPath])
+    for (const source of context) {
+      if (!selectedTests.has(source.path) && !TEST_FILE.test(source.path)) {
+        candidates.add(source.path.replaceAll("\\", "/"))
+      }
+    }
+  }
+  return [...candidates].sort((left, right) => left.localeCompare(right))
 }

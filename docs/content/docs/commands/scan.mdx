@@ -18,7 +18,7 @@ behavior and the JSON reporter. It classifies every selected test as `no-failure
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--runs <number>` | `4` | Number of repetitions. |
-| `--concurrency <n>` | `1` | Playwright workers. Increase only when shared resources are safe. |
+| `--concurrency <n>` | `2` | Playwright workers. Use `1` when shared resources cannot run safely in parallel. |
 | `--artifacts <dir>` | `.flakelab/runs` | Evidence directory. |
 | `--json` | off | Emit only the validated artifact JSON on stdout. |
 | `--verbose` | off | Append artifact JSON to the human summary. |
@@ -42,8 +42,8 @@ flakelab scan tests/checkout.spec.ts --json > scan.json
 ```
 
 <Callout type="info">
-The default is one worker because arbitrary projects may share ports, databases, accounts,
-or files. To investigate concurrency deliberately, use the
+The default is two workers for a practical speed/isolation balance. Use `--concurrency 1` when
+a project shares ports, databases, accounts, or files unsafely. To investigate concurrency deliberately, use the
 [`worker-pressure`](/docs/faults/concurrency) fault instead of raising `--concurrency`
 during an unrelated experiment.
 </Callout>

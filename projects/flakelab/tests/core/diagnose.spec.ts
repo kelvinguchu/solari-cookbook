@@ -49,7 +49,7 @@ test("adaptive recommendations keep the cheapest useful next step explicit", () 
   })
   expect(local).toMatchObject({
     credentials: [],
-    expectedDuration: "about 2 minute(s)",
+    expectedDuration: "up to 10 minute(s)",
     plannedTrials: 96,
     solariCostEstimateUsd: 0,
   })

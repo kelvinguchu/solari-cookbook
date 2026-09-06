@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
 import {
+  discoverRepairSourceCandidates,
   readSafeRepairContext,
   readSafeTestContext,
   readSafeTestSource,
@@ -70,5 +71,35 @@ test("repair context includes explicitly approved application sources", async (
   expect(context.map((source) => source.path)).toEqual([
     expect.stringContaining("checkout.spec.ts"),
     expect.stringContaining("checkout-controller.ts"),
+  ])
+})
+
+test("repair source discovery follows local imports from every test in a selected folder", async (
+  { browserName: _browserName },
+  testInfo,
+) => {
+  const fixtureRoot = await prepareFixtureRoot(testInfo.outputPath("source-discovery"))
+  const testsDirectory = resolve(fixtureRoot, "tests")
+  const sourceDirectory = resolve(fixtureRoot, "src")
+  await mkdir(testsDirectory, { recursive: true })
+  await mkdir(sourceDirectory, { recursive: true })
+  await writeFile(
+    resolve(testsDirectory, "checkout.spec.ts"),
+    'import { checkout } from "../src/checkout.js"\ntest(String(checkout), async () => true)\n',
+    "utf8",
+  )
+  await writeFile(
+    resolve(testsDirectory, "cart.spec.ts"),
+    'import { cart } from "../src/cart.js"\ntest(String(cart), async () => true)\n',
+    "utf8",
+  )
+  await writeFile(resolve(sourceDirectory, "checkout.ts"), "export const checkout = true\n", "utf8")
+  await writeFile(resolve(sourceDirectory, "cart.ts"), "export const cart = true\n", "utf8")
+
+  const candidates = await discoverRepairSourceCandidates(process.cwd(), testsDirectory)
+
+  expect(candidates).toEqual([
+    expect.stringContaining("src/cart.ts"),
+    expect.stringContaining("src/checkout.ts"),
   ])
 })

@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
+import { candidateOutputTokenBudget } from "../../src/repair/generator.js"
 import { validateCandidatePatch } from "../../src/repair/policy.js"
 
 const appPath = "app.ts"
@@ -16,6 +17,12 @@ async function createFixture(testInfo: TestInfo): Promise<string> {
   await writeFile(resolve(fixtureRoot, testPath), "expect(status).toBe('complete')\n", "utf8")
   return fixtureRoot
 }
+
+test("candidate generation fits beneath the baseline Groq output-token ceiling", () => {
+  expect(candidateOutputTokenBudget(1_000)).toBe(900)
+  expect(candidateOutputTokenBudget(800)).toBe(720)
+  expect(() => candidateOutputTokenBudget(99)).toThrow(/at least 100/u)
+})
 
 test("repair policy permits a narrow application edit", async ({
   browserName: _browserName,

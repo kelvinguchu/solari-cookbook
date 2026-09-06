@@ -33,6 +33,16 @@ export interface GeneratedCandidatePatch {
   usage: CandidateGenerationUsage
 }
 
+const BASELINE_GROQ_OUTPUT_TOKENS_PER_MINUTE = 1_000
+
+/** Keeps one structured repair request below Groq's baseline organization OTPM ceiling. */
+export function candidateOutputTokenBudget(outputTokensPerMinute: number): number {
+  if (!Number.isInteger(outputTokensPerMinute) || outputTokensPerMinute < 100) {
+    throw new Error("Groq output-token limit must be an integer of at least 100")
+  }
+  return Math.floor(outputTokensPerMinute * 0.9)
+}
+
 function estimatedCost(inputTokens: number, outputTokens: number): number {
   return (
     inputTokens * QWEN_INPUT_USD_PER_MILLION
@@ -67,7 +77,7 @@ async function requestCandidate(
         model: options.model,
         output: Output.object({ schema: candidatePatchSchema }),
         prompt: currentPrompt,
-        maxOutputTokens: 1_500,
+        maxOutputTokens: candidateOutputTokenBudget(BASELINE_GROQ_OUTPUT_TOKENS_PER_MINUTE),
         maxRetries: 2,
         timeout: { totalMs: options.maxSeconds * 1_000 },
         abortSignal: options.signal,

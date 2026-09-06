@@ -1,51 +1,33 @@
 import type { LanguageModel } from "ai"
-import { generateText, Output } from "ai"
-import { z } from "zod"
+import { generateText, NoObjectGeneratedError, Output } from "ai"
 
 import { evaluateExperiment } from "../discovery/evaluate.js"
 import type { ExperimentResult } from "../discovery/evaluate.js"
-import type { Fault } from "../domain/schema.js"
 import type { TrialExecutor } from "../runner/playwright-executor.js"
+import {
+  applyInvestigationAssessment,
+  type AssessmentGeneration,
+  generateValidInvestigationAssessment,
+  investigationAssessmentSchema,
+  type InvestigationAssessment,
+  validateExperimentEvidence,
+} from "./assessment.js"
 import { InvestigationBudget } from "./budget.js"
+import { RecoverableGenerationError } from "./generation.js"
 import { InvestigationLedger } from "./ledger.js"
+import {
+  generateValidInvestigationPlan,
+  investigationPlanSchema,
+  type InvestigationPlan,
+  type PlanGeneration,
+} from "./planning.js"
 import { readSafeTestContext } from "./safe-source.js"
 import type {
-  ExperimentCondition,
   ExperimentEvidence,
   Hypothesis,
   InvestigationReport,
 } from "./schema.js"
-import { experimentConditionSchema } from "./schema.js"
-
-const plannedHypothesisSchema = z.object({
-  statement: z.string().min(8).max(500),
-  prediction: z.string().min(8).max(500),
-})
-
-const investigationPlanSchema = z.object({
-  hypotheses: z.array(plannedHypothesisSchema).min(2).max(3),
-  experiments: z.array(z.object({
-    hypothesisIndex: z.number().int().nonnegative(),
-    condition: experimentConditionSchema,
-  })).length(3),
-})
-
-const assessmentItemSchema = z.object({
-  hypothesisId: z.string().regex(/^H\d+$/u),
-  status: z.enum(["rejected", "confirmed"]),
-  evidenceExperimentIds: z.array(z.string().regex(/^E\d+$/u)).min(1),
-  explanation: z.string().min(8).max(1_000),
-})
-
-const assessmentSchema = z.object({
-  assessments: z.array(assessmentItemSchema).min(2).max(3),
-  conclusionHypothesisId: z.string().regex(/^H\d+$/u),
-  conclusion: z.string().min(30).max(2_000),
-  conclusionEvidenceIds: z.array(z.string().regex(/^E\d+$/u)).min(1),
-})
-
-type Assessment = z.infer<typeof assessmentSchema>
-type InvestigationPlan = z.infer<typeof investigationPlanSchema>
+import { conditionToFaults } from "./targeting.js"
 
 interface LedgerState {
   evidence: ExperimentEvidence[]
@@ -76,26 +58,6 @@ export interface InvestigatorOptions {
   trialsPerExperiment: number
 }
 
-function conditionToFault(
-  condition: ExperimentCondition,
-  pattern: string,
-  test: string,
-): Fault | undefined {
-  if (condition.kind === "baseline") {
-    return undefined
-  }
-  const faultPattern = condition.kind === "worker-pressure"
-    || condition.kind === "shared-state-interference"
-    ? test
-    : pattern
-  return { ...condition, pattern: faultPattern }
-}
-
-function conditionToFaults(condition: ExperimentCondition, pattern: string, test: string): Fault[] {
-  const fault = conditionToFault(condition, pattern, test)
-  return fault ? [fault] : []
-}
-
 function estimatedCost(
   inputTokens: number,
   outputTokens: number,
@@ -107,6 +69,19 @@ function estimatedCost(
   ) / 1_000_000
 }
 
+function enforceCostBudget(
+  inputTokens: number,
+  outputTokens: number,
+  options: InvestigatorOptions,
+  budget: InvestigationBudget,
+): number {
+  const cost = estimatedCost(inputTokens, outputTokens, options)
+  if (cost > budget.maxCostUsd()) {
+    throw new Error(`Investigation cost $${cost.toFixed(4)} exceeded its configured budget`)
+  }
+  return cost
+}
+
 function planningPrompt(
   test: string,
   sources: { content: string; path: string }[],
@@ -114,8 +89,9 @@ function planningPrompt(
 ): string {
   return [
     "You are planning a causal investigation of a flaky Playwright test.",
-    "Propose two or three competing, falsifiable hypotheses and exactly three experiments.",
-    "The experiment batch must contain a clean baseline and two different interventions chosen",
+    "Propose exactly two competing, falsifiable hypotheses and exactly three experiments.",
+    "The experiment batch must contain a clean baseline and one different intervention for each",
+    "hypothesis, chosen",
     "from network delay, request failure, response truncation, response duplication, and response",
     "reordering, resource loading delay, startup event delay, a bounded event-loop stall, named",
     "auth-cookie expiry, delayed visibility of a named local/session-storage entry, a bounded",
@@ -142,17 +118,16 @@ function assessmentPrompt(ledgerState: object): string {
     "Assess this completed causal investigation using only the supplied evidence.",
     "Return one assessment for every hypothesis. Confirm exactly one hypothesis and reject",
     "at least one alternative. Confirmation requires a controlled fault that materially and",
-    "confidently increased failure rate above baseline. The conclusion must describe the",
-    "confirmed causal mechanism and cite only experiment IDs associated with that hypothesis.",
-    "Every rejected hypothesis must cite its own experiment where result.confirmed is false;",
-    "never use a confirmed experiment as the sole evidence for rejection.",
+    "confidently increased failure rate above baseline. Return hypothesis IDs, statuses, and",
+    "explanations only; FlakeLab binds the measured experiment evidence deterministically.",
+    "The conclusion must identify and describe the confirmed causal mechanism.",
     JSON.stringify(ledgerState, null, 2),
   ].join("\n")
 }
 
 function assessmentRepairPrompt(
   ledgerState: object,
-  previous: Assessment,
+  previous: InvestigationAssessment,
   validationError: string,
 ): string {
   return [
@@ -177,57 +152,6 @@ function createLedgerState(plan: InvestigationPlan, results: ExperimentResult[])
   return { evidence, hypotheses, ledger }
 }
 
-function applyAssessment(state: LedgerState, assessment: Assessment): void {
-  const assessedIds = new Set(assessment.assessments.map((item) => item.hypothesisId))
-  if (assessedIds.size !== state.hypotheses.length) {
-    throw new Error("Investigator must assess every proposed hypothesis exactly once")
-  }
-  for (const item of assessment.assessments) {
-    state.ledger.assess(
-      item.hypothesisId,
-      item.status,
-      item.evidenceExperimentIds,
-      item.explanation,
-    )
-  }
-  state.ledger.conclude(
-    assessment.conclusionHypothesisId,
-    assessment.conclusion,
-    assessment.conclusionEvidenceIds,
-  )
-}
-
-function validatePlan(
-  plan: z.infer<typeof investigationPlanSchema>,
-  options: InvestigatorOptions,
-): void {
-  if (plan.experiments.length > options.maxExperiments) {
-    throw new Error("Model proposed more experiments than the configured budget")
-  }
-  if (plan.experiments.some((entry) => entry.hypothesisIndex >= plan.hypotheses.length)) {
-    throw new Error("Model proposed an experiment for a missing hypothesis")
-  }
-  const coveredHypotheses = new Set(plan.experiments.map((entry) => entry.hypothesisIndex))
-  if (plan.hypotheses.some((_hypothesis, index) => !coveredHypotheses.has(index))) {
-    throw new Error("Every proposed hypothesis must receive an experiment")
-  }
-  if (plan.experiments.some((entry) =>
-    (entry.condition.kind === "network-delay" || entry.condition.kind === "resource-loading-delay"
-      || entry.condition.kind === "startup-event-delay"
-      || entry.condition.kind === "storage-state-delay")
-    && entry.condition.delayMs > options.maximumDelayMs)) {
-    throw new Error("Model proposed a delay above the configured maximum")
-  }
-  if (plan.experiments.some((entry) => entry.condition.kind === "event-loop-stall"
-    && entry.condition.durationMs > options.maximumDelayMs)) {
-    throw new Error("Model proposed an event-loop stall above the configured maximum")
-  }
-  const kinds = new Set(plan.experiments.map((entry) => entry.condition.kind))
-  if (!kinds.has("baseline") || kinds.size !== 3) {
-    throw new Error("Investigation plan must contain a baseline and two distinct interventions")
-  }
-}
-
 export async function runInvestigation(options: InvestigatorOptions): Promise<InvestigationReport> {
   if (options.maxSteps < 2) {
     throw new Error("Investigation requires a budget of two model steps")
@@ -236,18 +160,54 @@ export async function runInvestigation(options: InvestigatorOptions): Promise<In
   const timeoutSignal = AbortSignal.timeout(options.maxSeconds * 1_000)
   const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
   const sources = await readSafeTestContext(options.projectRoot, options.test)
-  const planResult = await generateText({
-    model: options.model,
-    output: Output.object({ schema: investigationPlanSchema }),
-    prompt: planningPrompt(options.test, sources, options.maximumDelayMs),
-    maxOutputTokens: options.outputTokenLimit,
-    maxRetries: 2,
-    timeout: { totalMs: budget.remainingMs() },
-    abortSignal: signal,
-    temperature: 0.2,
+  const planResult = await generateValidInvestigationPlan({
+    generate: async (prompt, temperature): Promise<PlanGeneration> => {
+      try {
+        const result = await generateText({
+          model: options.model,
+          output: Output.object({ schema: investigationPlanSchema }),
+          prompt,
+          maxOutputTokens: options.outputTokenLimit,
+          maxRetries: 2,
+          timeout: { totalMs: budget.remainingMs() },
+          abortSignal: signal,
+          temperature,
+        })
+        return {
+          output: result.output,
+          usage: {
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+          },
+        }
+      } catch (error) {
+        if (NoObjectGeneratedError.isInstance(error)) {
+          throw new RecoverableGenerationError(error.message, error.text, {
+            inputTokens: error.usage?.inputTokens ?? 0,
+            outputTokens: error.usage?.outputTokens ?? 0,
+          })
+        }
+        throw error
+      }
+    },
+    initialPrompt: planningPrompt(options.test, sources, options.maximumDelayMs),
+    maxAttempts: Math.min(2, options.maxSteps - 1),
+    rules: {
+      maxExperiments: options.maxExperiments,
+      maximumDelayMs: options.maximumDelayMs,
+    },
   })
-  const plan = planResult.output
-  validatePlan(plan, options)
+  const plan = planResult.plan
+  let modelSteps = planResult.attempts.length
+  const planningInputTokens = planResult.attempts.reduce(
+    (total, usage) => total + usage.inputTokens,
+    0,
+  )
+  const planningOutputTokens = planResult.attempts.reduce(
+    (total, usage) => total + usage.outputTokens,
+    0,
+  )
+  enforceCostBudget(planningInputTokens, planningOutputTokens, options, budget)
 
   plan.experiments.forEach(() => {
     budget.reserveExperiment(options.trialsPerExperiment)
@@ -262,56 +222,79 @@ export async function runInvestigation(options: InvestigatorOptions): Promise<In
       trials: options.trialsPerExperiment,
     })))
   let state = createLedgerState(plan, results)
+  validateExperimentEvidence(state.evidence)
 
-  const assessmentResult = await generateText({
-    model: options.model,
-    output: Output.object({ schema: assessmentSchema }),
-    prompt: assessmentPrompt({ hypotheses: state.hypotheses, experiments: state.evidence }),
-    maxOutputTokens: options.outputTokenLimit,
-    maxRetries: 2,
-    timeout: { totalMs: budget.remainingMs() },
-    abortSignal: signal,
-    temperature: 0.2,
+  const ledgerState = { hypotheses: state.hypotheses, experiments: state.evidence }
+  const generateAssessment = async (
+    prompt: string,
+    temperature: number,
+  ): Promise<AssessmentGeneration> => {
+    try {
+      const result = await generateText({
+        model: options.model,
+        output: Output.object({ schema: investigationAssessmentSchema }),
+        prompt,
+        maxOutputTokens: options.outputTokenLimit,
+        maxRetries: 2,
+        timeout: { totalMs: budget.remainingMs() },
+        abortSignal: signal,
+        temperature,
+      })
+      return {
+        output: result.output,
+        usage: {
+          inputTokens: result.usage.inputTokens ?? 0,
+          outputTokens: result.usage.outputTokens ?? 0,
+        },
+      }
+    } catch (error) {
+      if (NoObjectGeneratedError.isInstance(error)) {
+        throw new RecoverableGenerationError(error.message, error.text, {
+          inputTokens: error.usage?.inputTokens ?? 0,
+          outputTokens: error.usage?.outputTokens ?? 0,
+        })
+      }
+      throw error
+    }
+  }
+  const assessmentResult = await generateValidInvestigationAssessment({
+    generate: generateAssessment,
+    initialPrompt: assessmentPrompt(ledgerState),
+    maxAttempts: Math.min(2, options.maxSteps - modelSteps),
   })
-  const assessmentResults = [assessmentResult]
+  modelSteps += assessmentResult.attempts.length
+  const assessmentAttempts = [...assessmentResult.attempts]
   try {
-    applyAssessment(state, assessmentResult.output)
+    applyInvestigationAssessment(state, assessmentResult.assessment)
   } catch (error) {
-    if (options.maxSteps < 3) {
+    if (modelSteps >= options.maxSteps) {
       throw error
     }
     const validationError = error instanceof Error ? error.message : "invalid evidence assessment"
-    const repairResult = await generateText({
-      model: options.model,
-      output: Output.object({ schema: assessmentSchema }),
-      prompt: assessmentRepairPrompt(
-        { hypotheses: state.hypotheses, experiments: state.evidence },
-        assessmentResult.output,
+    const repairResult = await generateValidInvestigationAssessment({
+      generate: generateAssessment,
+      initialPrompt: assessmentRepairPrompt(
+        ledgerState,
+        assessmentResult.assessment,
         validationError,
       ),
-      maxOutputTokens: options.outputTokenLimit,
-      maxRetries: 1,
-      timeout: { totalMs: budget.remainingMs() },
-      abortSignal: signal,
       temperature: 0,
+      maxAttempts: Math.min(2, options.maxSteps - modelSteps),
     })
-    assessmentResults.push(repairResult)
+    assessmentAttempts.push(...repairResult.attempts)
     state = createLedgerState(plan, results)
-    applyAssessment(state, repairResult.output)
+    applyInvestigationAssessment(state, repairResult.assessment)
   }
 
-  const inputTokens = (planResult.usage.inputTokens ?? 0) + assessmentResults.reduce(
-    (total, result) => total + (result.usage.inputTokens ?? 0),
+  const inputTokens = planningInputTokens + assessmentAttempts.reduce(
+    (total, usage) => total + usage.inputTokens,
     0,
   )
-  const outputTokens = (planResult.usage.outputTokens ?? 0) + assessmentResults.reduce(
-    (total, result) => total + (result.usage.outputTokens ?? 0),
+  const outputTokens = planningOutputTokens + assessmentAttempts.reduce(
+    (total, usage) => total + usage.outputTokens,
     0,
   )
-  const cost = estimatedCost(inputTokens, outputTokens, options)
-  if (cost > budget.maxCostUsd()) {
-    throw new Error(`Investigation cost $${cost.toFixed(4)} exceeded its configured budget`)
-  }
+  const cost = enforceCostBudget(inputTokens, outputTokens, options, budget)
   return state.ledger.buildReport(options.test, options.modelId, sources.map((source) => source.path), {
     inputTokens,
     outputTokens,

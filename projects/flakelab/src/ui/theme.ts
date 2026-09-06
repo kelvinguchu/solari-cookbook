@@ -104,3 +104,11 @@ export function stdoutTheme(): TerminalTheme {
 export function stderrTheme(): TerminalTheme {
   return streamTheme(process.stderr)
 }
+
+/** Live terminal affordances stay out of redirected output and CI logs. */
+export function terminalActivityEnabled(
+  stream: NodeJS.WriteStream = process.stderr,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(stream.isTTY) && !present(env.CI) && env.TERM !== "dumb"
+}

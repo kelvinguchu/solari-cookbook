@@ -5,6 +5,8 @@ import { readReproducer } from "../reproducer/file.js"
 import { createPlaywrightExecutor } from "../runner/playwright-executor.js"
 import { writeStderr } from "../ui/console.js"
 import { TerminalDocument } from "../ui/document.js"
+import { formatCount } from "../ui/format.js"
+import { ProgressReporter } from "../ui/progress.js"
 import { stderrTheme } from "../ui/theme.js"
 import type { ReplayOptions } from "./options.js"
 import { integerOption, withInterruption } from "./options.js"
@@ -35,6 +37,11 @@ function replaySummary(verdict: ReplayVerdict): string {
 export async function replay(filePath: string, values: ReplayOptions): Promise<void> {
   const projectRoot = process.cwd()
   const reproducer = await readReproducer(resolve(projectRoot, filePath))
+  const progress = new ProgressReporter()
+  progress.start(
+    "reproducer replay",
+    `${formatCount(reproducer.trials, "trial")} under the recorded fault`,
+  )
   const result = await withInterruption(async (signal) => evaluateExperiment(
     createPlaywrightExecutor(projectRoot, reproducer.test, { signal }),
     {
@@ -49,6 +56,10 @@ export async function replay(filePath: string, values: ReplayOptions): Promise<v
   const signatureMatches = !reproducer.expectedFailure.signature
     || reproducer.expectedFailure.signature === result.dominantFailureSignature
   const reproduced = result.confirmed && signatureMatches
+  progress.done(
+    `${result.failed}/${result.trials} failed · signature `
+    + `${signatureMatches ? "matched" : "did not match"}`,
+  )
   writeStderr(replaySummary(
     { failed: result.failed, path: filePath, reproduced, signatureMatches, test: reproducer.test,
       trials: result.trials },

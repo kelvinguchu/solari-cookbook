@@ -12,10 +12,12 @@ import { withSolariTransport } from "../solari/transport.js"
 import { formatProviderBoundary } from "../ui/boundary.js"
 import { writeStderr } from "../ui/console.js"
 import { formatCount } from "../ui/format.js"
+import { formatCandidateDiff } from "../ui/diff.js"
 import { ProgressReporter } from "../ui/progress.js"
-import { stderrTheme } from "../ui/theme.js"
+import { stderrTheme, terminalActivityEnabled } from "../ui/theme.js"
 import { formatProofSummary } from "../repair/summary.js"
 import type { ProofOfFix } from "../repair/schema.js"
+import { createCandidateDiff } from "../repair/workspace.js"
 import type { RepairOptions } from "./options.js"
 import { integerOption, positiveNumberOption, withInterruption } from "./options.js"
 
@@ -66,6 +68,11 @@ export async function repair(
       sourcePaths: values.source,
     })
     progress.done(formatCount(generated.candidate.edits.length, "source edit"))
+    const previewDiff = await createCandidateDiff(projectRoot, generated.candidate)
+    await writeFile(patchPath, previewDiff, "utf8")
+    if (terminalActivityEnabled()) {
+      writeStderr(formatCandidateDiff(previewDiff, values.patch, stderrTheme()))
+    }
     progress.start("isolated proof", "Solari microVM")
     const validated = await withSolariTransport(async () => validateProofOfFix(
       {

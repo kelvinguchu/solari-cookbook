@@ -5,7 +5,11 @@ import { resolve } from "node:path"
 
 import { nearbyRegressionSelectors } from "../../src/repair/validator.js"
 import { remoteFaultArguments } from "../../src/repair/solari-validator.js"
-import { applyCandidatePatch, createPatchWorkspace } from "../../src/repair/workspace.js"
+import {
+  applyCandidatePatch,
+  createCandidateDiff,
+  createPatchWorkspace,
+} from "../../src/repair/workspace.js"
 
 test("candidate edits stay inside a disposable project copy", async () => {
   const sourcePath = "tests/support/checkout-server.ts"
@@ -29,6 +33,25 @@ test("candidate edits stay inside a disposable project copy", async () => {
     await workspace.cleanup()
   }
   await expect(access(workspace.root)).rejects.toThrow()
+})
+
+test("candidate diff preview does not change the working tree", async () => {
+  const sourcePath = "tests/support/checkout-server.ts"
+  const originalPath = resolve(sourcePath)
+  const original = await readFile(originalPath, "utf8")
+
+  const diff = await createCandidateDiff(process.cwd(), {
+    summary: "Preview an isolated checkout status behavior change",
+    rationale: "A terminal preview must not change the developer's source file",
+    edits: [{
+      path: sourcePath,
+      before: "status.textContent = 'Processing'",
+      after: "status.textContent = 'Submitting'",
+    }],
+  })
+
+  expect(diff).toContain("+        status.textContent = 'Submitting'")
+  expect(await readFile(originalPath, "utf8")).toBe(original)
 })
 
 test("proof transports every supported fault without narrowing it to network delay", () => {

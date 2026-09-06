@@ -51,10 +51,10 @@ const DISCOVERY_OPTIONS: DocumentRow[] = [
   { label: "--fault <family>", value: FAULTS },
   { label: "--pattern <glob>", value: "Request pattern the network faults apply to" },
   { label: "--trials <number>", value: "Trials per candidate batch" },
-  { label: "--concurrency <n>", value: "Playwright workers per trial batch" },
+  { label: "--concurrency <n>", value: "Playwright workers per trial batch (default: 2)" },
   { label: "--min-rate <rate>", value: "Failure rate a trigger must reach to be confirmed" },
   { label: "--seed <number>", value: "Deterministic seed for every trial" },
-  { label: "--max-seconds <n>", value: "Elapsed-time ceiling for the search (default: 300)" },
+  { label: "--max-seconds <n>", value: "Elapsed-time ceiling for the search (default: 600)" },
   { label: "Fault bounds", value: FAULT_BOUNDS },
 ]
 
@@ -137,7 +137,7 @@ export const COMMAND_HELP: Record<HelpTopic, CommandHelp> = {
     examples: ["flakelab investigate tests/checkout.spec.ts --max-cost 0.10"],
     options: [
       { label: "--report <path>", value: "Investigation artifact path" },
-      { label: "--max-steps <number>", value: "Agent reasoning steps" },
+      { label: "--max-steps <number>", value: "Agent reasoning steps (default: 4)" },
       { label: "--max-experiments <n>", value: "Experiments the agent may run" },
       { label: "--max-trials <number>", value: "Trial ceiling across the investigation" },
       { label: "--max-seconds <number>", value: "Elapsed-time ceiling" },
@@ -171,7 +171,7 @@ export const COMMAND_HELP: Record<HelpTopic, CommandHelp> = {
     examples: ["flakelab repair flakelab.investigation.json --source src/checkout.ts"],
     options: [
       { label: "--source <file>", value: "Approve one application source file (repeatable)" },
-      { label: "--concurrency <n>", value: "Playwright workers inside the Solari proof" },
+      { label: "--concurrency <n>", value: "Playwright workers inside the Solari proof (default: 2)" },
       { label: "--max-seconds <number>", value: "Elapsed-time ceiling for candidate generation" },
       ...EVIDENCE_OPTIONS,
       ...PROVIDER_OPTIONS,
@@ -182,7 +182,7 @@ export const COMMAND_HELP: Record<HelpTopic, CommandHelp> = {
   replay: {
     examples: ["flakelab replay flakelab.repro.yaml --concurrency 4"],
     options: [
-      { label: "--concurrency <n>", value: "Playwright workers used for the replay trials" },
+      { label: "--concurrency <n>", value: "Playwright workers used for replay trials (default: 2)" },
     ],
     summary: "Re-run a saved reproducer and check that the recorded signature still appears.",
     usage: "flakelab replay <reproducer> [options]",
@@ -212,7 +212,7 @@ export const COMMAND_HELP: Record<HelpTopic, CommandHelp> = {
     ],
     options: [
       { label: "--runs <number>", value: "Repetitions to run (default: 4)" },
-      { label: "--concurrency <n>", value: "Playwright workers (default: 1)" },
+      { label: "--concurrency <n>", value: "Playwright workers (default: 2)" },
       { label: "--artifacts <dir>", value: "Evidence directory (default: .flakelab/runs)" },
       { label: "--json", value: "Write only the scan artifact JSON to stdout" },
       { label: "--verbose", value: "Append the artifact JSON to the human summary" },

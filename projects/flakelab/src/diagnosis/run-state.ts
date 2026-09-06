@@ -107,6 +107,18 @@ function checkpointOptions(
   }
 }
 
+export function updateDiagnosisWorkflow(
+  context: DiagnosisContext,
+  values: DiagnoseOptions,
+): void {
+  context.values = values
+  context.checkpoint.input.options = checkpointOptions(context.projectRoot, values)
+  context.checkpoint.input.report = values.report
+    ? portableOptionPath(context.projectRoot, values.report)
+    : null
+  context.checkpoint.inputHash = diagnosisInputHash(context.checkpoint.input)
+}
+
 export function restoreDiagnosisOptions(checkpoint: DiagnosisArtifact): DiagnoseOptions {
   const { baseline, report, ...options } = checkpoint.input.options
   return {

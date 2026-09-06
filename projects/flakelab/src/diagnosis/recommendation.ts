@@ -1,6 +1,8 @@
 import type { DiagnoseOptions } from "../commands/options.js"
 import { integerOption, positiveNumberOption } from "../commands/options.js"
+import { networkDelayTrialBound } from "../discovery/minimize.js"
 import type { ScanStatus } from "../scan/schema.js"
+import { buildDiscoveryBudget } from "./discovery-budget.js"
 import type {
   DiagnosisRecommendation,
   DiagnosisStage,
@@ -22,8 +24,7 @@ function quoted(value: string): string {
 function discoveryTrialBound(values: DiagnoseOptions): number {
   const trials = integerOption(values.trials, "trials")
   const maximumDelay = integerOption(values["max-delay"], "max-delay")
-  const interventionBatches = 1 + Math.ceil(Math.log2(Math.max(1, maximumDelay)))
-  return 2 * (trials * interventionBatches + Math.max(trials, 12))
+  return networkDelayTrialBound(trials, maximumDelay)
 }
 
 function formattedDuration(seconds: number): string {
@@ -42,9 +43,17 @@ function expectedDuration(
   if (elapsedMilliseconds === 0 || observedRuns === 0) {
     return `${plannedTrials} normal target run(s); no runtime sample is available yet`
   }
-  const millisecondsPerRun = elapsedMilliseconds / observedRuns
-  const seconds = Math.ceil(millisecondsPerRun * plannedTrials / concurrency / 1_000)
-  return formattedDuration(seconds)
+  if (plannedTrials === 0) {
+    return formattedDuration(1)
+  }
+  const budget = buildDiscoveryBudget({
+    concurrency,
+    configuredSeconds: 0,
+    elapsedMilliseconds,
+    observedRuns,
+    plannedTrials,
+  })
+  return `up to ${Math.ceil(budget.recommendedSeconds / 60)} minute(s)`
 }
 
 function localRecommendation(

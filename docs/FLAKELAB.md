@@ -64,7 +64,7 @@ flowchart LR
   E --> F[Review<br/>offline report]
 ```
 
-`diagnose` is the recommended adaptive entry point. It starts with the cheapest useful operation, then always offers `Use Solari to prove a candidate fix? [y/N]` after an eligible interactive diagnosis. An affirmative answer is followed by a separate AI consent question. Both default to no, CI and piped runs never pause, and provider-backed work starts only after explicit approval. FlakeLab preflights both provider credentials before lengthy discovery begins and offers hidden, run-once paste prompts for missing keys.
+`diagnose` is the recommended adaptive entry point. It starts with the cheapest useful operation, then always offers `Use Solari to prove a candidate fix? [y/N]` after an eligible interactive diagnosis. An affirmative answer is followed by a separate AI consent question. Both default to no, CI and piped runs never pause, and provider-backed work starts only after explicit approval. FlakeLab requires an application source instead of defaulting to the test file, raises an undersized discovery limit only with approval, preflights both provider credentials before lengthy discovery begins, and offers hidden, run-once paste prompts for missing keys.
 
 ## Installation and requirements
 
@@ -177,7 +177,7 @@ Options:
 | Option              | Default          | Meaning                                                           |
 | ------------------- | ---------------- | ----------------------------------------------------------------- |
 | `--runs <number>`   | `4`              | Number of repetitions.                                            |
-| `--concurrency <n>` | `1`              | Playwright workers. Increase only when shared resources are safe. |
+| `--concurrency <n>` | `2`              | Playwright workers. Use `1` when shared resources are unsafe.     |
 | `--artifacts <dir>` | `.flakelab/runs` | Evidence directory.                                               |
 | `--json`            | off              | Emit only the validated artifact JSON on stdout.                  |
 | `--verbose`         | off              | Append artifact JSON to the human summary.                        |
@@ -221,7 +221,7 @@ flakelab diagnose [test] [options]
 
 This is the primary user journey. A test target begins with a bounded scan; `--report` begins with read-only blob-report analysis. The command writes `.flakelab/runs/diagnose.json` atomically after every phase so interrupted work can be resumed.
 
-After an eligible interactive diagnosis, FlakeLab asks `Use Solari to prove a candidate fix? [y/N]`. Pressing Enter stops after local diagnosis. Answering yes leads to `Use AI to investigate and generate the candidate? [y/N]`, then requests an approved source file when needed. Once both actions are approved, FlakeLab checks `GROQ_API_KEY` and `SOLARI_API_KEY` up front, offering hidden, run-once paste prompts for missing keys, and starts the bounded proof pipeline. Non-interactive and CI runs skip the prompts.
+After an eligible interactive diagnosis, FlakeLab asks `Use Solari to prove a candidate fix? [y/N]`. Pressing Enter stops after local diagnosis. Answering yes leads to `Use AI to investigate and generate the candidate? [y/N]`, then follows local imports from the selected test file or test directory and presents likely application sources for explicit approval. A single match gets a direct confirmation; multiple matches are numbered and Tab-completable. Pressing Enter cancels rather than approving the test target. FlakeLab compares measured runtime with `--max-seconds` and offers a raised limit with headroom when the configured bound cannot accommodate the planned discovery. Once approved, FlakeLab checks `GROQ_API_KEY` and `SOLARI_API_KEY` up front, offering hidden, run-once paste prompts for missing keys, and starts the bounded proof pipeline. Non-interactive and CI runs skip the prompts.
 
 | Option                   | Default                       | Meaning                                                       |
 | ------------------------ | ----------------------------- | ------------------------------------------------------------- |
@@ -261,10 +261,10 @@ Core options:
 | `--fault <family>`  | `network-delay`       | Fault family to search.                                            |
 | `--pattern <glob>`  | `**/api/checkout`     | Request or document pattern for applicable faults.                 |
 | `--trials <number>` | `4`                   | Trials per candidate batch.                                        |
-| `--concurrency <n>` | `1`                   | Playwright workers per trial batch.                                |
+| `--concurrency <n>` | `2`                   | Playwright workers per trial batch.                                |
 | `--min-rate <rate>` | `0.7`                 | Requested intervention failure rate, greater than 0 and at most 1. |
 | `--seed <number>`   | `1`                   | Deterministic seed.                                                |
-| `--max-seconds <n>` | `300`                 | Elapsed-time ceiling for discovery.                                |
+| `--max-seconds <n>` | `600`                 | Elapsed-time ceiling for discovery.                                |
 | `--output <path>`   | `flakelab.repro.yaml` | Reproducer path.                                                   |
 
 Fault-specific bounds are listed in the fault catalog below.
@@ -279,7 +279,7 @@ Validates a reproducer, re-executes its exact fault set, and checks that the rec
 
 | Option              | Default | Meaning                                    |
 | ------------------- | ------- | ------------------------------------------ |
-| `--concurrency <n>` | `1`     | Playwright workers used for replay trials. |
+| `--concurrency <n>` | `2`     | Playwright workers used for replay trials. |
 
 ### `investigate`
 
@@ -292,7 +292,7 @@ Runs a bounded two-call Groq workflow: first propose competing hypotheses and an
 | Option                   | Default                       | Meaning                             |
 | ------------------------ | ----------------------------- | ----------------------------------- |
 | `--report <path>`        | `flakelab.investigation.json` | Investigation artifact.             |
-| `--max-steps <number>`   | `3`                           | Reasoning-step bound.               |
+| `--max-steps <number>`   | `4`                           | Reasoning-step bound.               |
 | `--max-experiments <n>`  | `3`                           | Experiment bound.                   |
 | `--max-trials <number>`  | `12`                          | Trial ceiling across investigation. |
 | `--max-seconds <number>` | `90`                          | Elapsed-time ceiling.               |
@@ -318,7 +318,7 @@ Generates one application-source candidate and proves it in a disposable Solari 
 | `--reproducer <path>`    | `flakelab.repro.yaml` | Reproducer used in hostile proof.                                 |
 | `--patch <path>`         | `candidate.diff`      | Output candidate diff.                                            |
 | `--proof <path>`         | `flakelab.proof.json` | Output proof matrix.                                              |
-| `--concurrency <n>`      | `1`                   | Playwright workers inside proof.                                  |
+| `--concurrency <n>`      | `2`                   | Playwright workers inside proof.                                  |
 | `--max-seconds <number>` | `90`                  | Candidate-generation time ceiling.                                |
 | `--model <name>`         | `qwen/qwen3.8-27b`    | Groq model identifier.                                            |
 | `--max-cost <usd>`       | `0.25`                | Candidate-generation spend ceiling.                               |
@@ -390,7 +390,7 @@ Archives historical revisions without Git credentials, prepares them in disposab
 | `--bisect-report <path>`   | `flakelab.bisect.json` | Evidence artifact.                                     |
 | `--max-trials <number>`    | `12`                   | Trial ceiling per revision.                            |
 | `--min-rate <rate>`        | `0.7`                  | Confidence threshold used for good/bad classification. |
-| `--concurrency <n>`        | `1`                    | Test workers in a revision trial.                      |
+| `--concurrency <n>`        | `2`                    | Test workers in a revision trial.                      |
 | `--prompt-credentials`     | off                    | Re-enter the Solari key through hidden input.          |
 
 The selected good revision must be an ancestor of the bad revision. `firstFailingCommit` is reported only when the boundary is exact. Incompatible or statistically inconclusive commits yield `earliestKnownBadCommit`, exit code `2`, and no overclaimed exact answer.
@@ -594,7 +594,7 @@ Provider-backed operations require either an explicit command flag or an affirma
 - `bisect` uses Solari;
 - `report --publish` uses a temporary Solari sandbox.
 
-Defaults keep work bounded: `$0.25` model ceiling, three reasoning steps, three experiments, 12 investigation trials, 90-second AI-operation ceilings, a five-minute discovery ceiling, single-worker local execution, and two concurrent bisect preparation sandboxes. Actual Solari cost depends on preparation time, project installation, trial duration, concurrency, and whether a valid snapshot can be reused. When FlakeLab cannot calculate a reliable estimate, it says so instead of inventing one.
+Defaults keep work bounded: `$0.25` model ceiling, four reasoning steps, three experiments, 12 investigation trials, a ten-minute discovery ceiling, two-worker local execution, and two concurrent bisect preparation sandboxes. Actual Solari cost depends on preparation time, project installation, trial duration, concurrency, and whether a valid snapshot can be reused. When FlakeLab cannot calculate a reliable estimate, it says so instead of inventing one.
 
 ## Current limitations
 
@@ -623,7 +623,7 @@ Check `--pattern`, request protocol, document URL, resource type, cookie/storage
 
 ### The suite behaves differently with concurrency
 
-The default is one worker because arbitrary projects may share ports, databases, accounts, or files. Use `worker-pressure` or `shared-state-interference` to investigate this deliberately rather than raising concurrency during an unrelated experiment.
+The default is two workers for a practical speed/isolation balance. Use `--concurrency 1` when a project shares ports, databases, accounts, or files unsafely. Use `worker-pressure` or `shared-state-interference` to investigate concurrency deliberately.
 
 ### Provider authentication or quota failure
 
